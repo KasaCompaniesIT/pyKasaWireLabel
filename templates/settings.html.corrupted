@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Label Settings - Wire Label Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>⚙️ Label Settings</h1>
+        
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <!-- Profile Management Section -->
+        <div class="profile-management">
+            <h3>📝 Profile Management</h3>
+            <div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 15px; margin-bottom: 20px;">
+                <div style="margin-bottom: 15px;">
+                    <strong>Current Profile:</strong> {{ current_profile }}
+                    {% if current_profile != 'Custom' %}
+                    <span style="color: #666; font-size: 14px;"> (Preset)</span>
+                    {% endif %}
+                </div>
+        
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <!-- Profile Management Section -->
+        <div class="profile-management">
+            <h3>� Profile Management</h3>
+            <div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 15px; margin-bottom: 20px;">
+                <div style="margin-bottom: 15px;">
+                    <strong>Current Profile:</strong> {{ current_profile }}
+                    {% if current_profile != 'Custom' %}
+                    <span style="color: #666; font-size: 14px;"> (Preset)</span>
+                    {% endif %}
+                </div>
+                
+                <!-- Save Current Settings as Profile -->
+                <form method="POST" action="/save_profile" style="display: inline-block; margin-right: 15px;">
+                    <input type="text" name="profile_name" placeholder="Profile name..." required style="padding: 5px; margin-right: 5px;">
+                    <button type="submit" class="btn-success" style="padding: 5px 10px;">💾 Save as Profile</button>
+                </form>
+                
+                <!-- Load Profile -->
+                <form method="POST" action="/load_profile" style="display: inline-block; margin-right: 15px;">
+                    <select name="profile_name" required style="padding: 5px; margin-right: 5px;">
+                        <option value="">Load profile...</option>
+                        {% for profile_name in profiles.keys() %}
+                        <option value="{{ profile_name }}">{{ profile_name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn-secondary" style="padding: 5px 10px;">📂 Load</button>
+                </form>
+                
+                <!-- Delete Profile -->
+                <form method="POST" action="/delete_profile" style="display: inline-block;" onsubmit="return confirm('Are you sure you want to delete this profile?');">
+                    <select name="profile_name" required style="padding: 5px; margin-right: 5px;">
+                        <option value="">Delete profile...</option>
+                        {% for profile_name in profiles.keys() %}
+                            {% if profile_name not in ['Standard Wire Label', 'Small Wire Label', 'Large Wire Label'] %}
+                            <option value="{{ profile_name }}">{{ profile_name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn-danger" style="padding: 5px 10px;">🗑️ Delete</button>
+                </form>
+            </div>
+        </div>
+        
+        <div class="current-settings">
+            <h3>📏 Current Settings</h3>
+            <div class="settings-grid">
+                <div class="settings-item">
+                    <span>Label Width:</span>
+                    <span class="settings-value">{{ "%.1f"|format(settings.width_mm) }} mm ({{ "%.2f"|format(settings.width_mm / 25.4) }}")</span>
+                </div>
+                <div class="settings-item">
+                    <span>Label Height:</span>
+                    <span class="settings-value">{{ "%.1f"|format(settings.height_mm) }} mm ({{ "%.2f"|format(settings.height_mm / 25.4) }}")</span>
+                </div>
+                <div class="settings-item">
+                    <span>Font:</span>
+                    <span class="settings-value">{{ settings.font_name }}</span>
+                </div>
+                <div class="settings-item">
+                    <span>Margins:</span>
+                    <span class="settings-value">T:{{ "%.1f"|format(settings.margin_top_mm) }} R:{{ "%.1f"|format(settings.margin_right_mm) }} B:{{ "%.1f"|format(settings.margin_bottom_mm) }} L:{{ "%.1f"|format(settings.margin_left_mm) }}mm</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="info-box">
+            <h3>📋 Settings Information</h3>
+            <ul>
+                <li><strong>Label Width:</strong> Length of the label (wraps around wire) - typically 2-4 inches</li>
+                <li><strong>Label Height:</strong> Height of the label - should fit your label stock</li>
+                <li><strong>Font:</strong> Text font family for the labels</li>
+                <li><strong>Margins:</strong> Individual spacing for each side (Top, Right, Bottom, Left)</li>
+                <li><strong>Profiles:</strong> Save different label configurations for quick switching</li>
+                <li>Common sizes: 3" × 0.5" (76.2 × 12.7mm), 2" × 0.5" (50.8 × 12.7mm)</li>
+                <li>All measurements are in millimeters for precision</li>
+                <li>Select printer and print quantity on the main page</li>
+            </ul>
+        </div>
+        
+        <form method="POST" action="/update_settings">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="width_mm">Label Width (mm) <span class="required">*</span></label>
+                    <input type="number" id="width_mm" name="width_mm" 
+                           value="{{ settings.width_mm }}" 
+                           min="10" max="200" step="0.1" required>
+                    <div class="help-text">Range: 10-200mm (0.4-7.9 inches)</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="height_mm">Label Height (mm) <span class="required">*</span></label>
+                    <input type="number" id="height_mm" name="height_mm" 
+                           value="{{ settings.height_mm }}" 
+                           min="5" max="100" step="0.1" required>
+                    <div class="help-text">Range: 5-100mm (0.2-3.9 inches)</div>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="font_name">Font <span class="required">*</span></label>
+                    <select id="font_name" name="font_name" required>
+                        <option value="Arial" {{ 'selected' if settings.font_name == 'Arial' else '' }}>Arial</option>
+                        <option value="Helvetica" {{ 'selected' if settings.font_name == 'Helvetica' else '' }}>Helvetica</option>
+                        <option value="Times" {{ 'selected' if settings.font_name == 'Times' else '' }}>Times</option>
+                        <option value="Courier" {{ 'selected' if settings.font_name == 'Courier' else '' }}>Courier (Monospace)</option>
+                    </select>
+                    <div class="help-text">Font family for label text</div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>Individual Margins (mm) <span class="required">*</span></label>
+                <div class="margin-grid">
+                    <div class="margin-item">
+                        <label for="margin_top_mm">Top</label>
+                        <input type="number" id="margin_top_mm" name="margin_top_mm" 
+                               value="{{ settings.margin_top_mm }}" 
+                               min="0" max="10" step="0.1" required>
+                    </div>
+                    <div class="margin-item">
+                        <label for="margin_right_mm">Right</label>
+                        <input type="number" id="margin_right_mm" name="margin_right_mm" 
+                               value="{{ settings.margin_right_mm }}" 
+                               min="0" max="10" step="0.1" required>
+                    </div>
+                    <div class="margin-item">
+                        <label for="margin_bottom_mm">Bottom</label>
+                        <input type="number" id="margin_bottom_mm" name="margin_bottom_mm" 
+                               value="{{ settings.margin_bottom_mm }}" 
+                               min="0" max="10" step="0.1" required>
+                    </div>
+                    <div class="margin-item">
+                        <label for="margin_left_mm">Left</label>
+                        <input type="number" id="margin_left_mm" name="margin_left_mm" 
+                               value="{{ settings.margin_left_mm }}" 
+                               min="0" max="10" step="0.1" required>
+                    </div>
+                </div>
+                <div class="help-text">Individual margins for each side (0-10mm each)</div>
+            </div>
+            
+            <div class="preview-section">
+                <h4>📐 Dimension Preview</h4>
+                <div class="dimension-display" id="dimensionPreview">
+                    Width: {{ "%.1f"|format(settings.width_mm) }}mm ({{ "%.2f"|format(settings.width_mm / 25.4) }}") × 
+                    Height: {{ "%.1f"|format(settings.height_mm) }}mm ({{ "%.2f"|format(settings.height_mm / 25.4) }}")
+                    <br>
+                    Font: {{ settings.font_name }}
+                    <br>
+                    Margins: T:{{ "%.1f"|format(settings.margin_top_mm) }} R:{{ "%.1f"|format(settings.margin_right_mm) }} B:{{ "%.1f"|format(settings.margin_bottom_mm) }} L:{{ "%.1f"|format(settings.margin_left_mm) }}mm
+                    <br>
+                    Text Area: {{ "%.1f"|format(settings.width_mm - settings.margin_left_mm - settings.margin_right_mm) }}mm × {{ "%.1f"|format(settings.height_mm - settings.margin_top_mm - settings.margin_bottom_mm) }}mm
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <a href="/" class="btn-secondary btn-link" id="cancelBtn">❌ Cancel</a>
+                <button type="button" id="resetBtn" class="btn-secondary">🔄 Reset to Defaults</button>
+                <button type="submit" class="btn-success">💾 Save Settings</button>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        // Real-time preview update
+        function updatePreview() {
+            const width = parseFloat(document.getElementById('width_mm').value) || 0;
+            const height = parseFloat(document.getElementById('height_mm').value) || 0;
+            const marginTop = parseFloat(document.getElementById('margin_top_mm').value) || 0;
+            const marginRight = parseFloat(document.getElementById('margin_right_mm').value) || 0;
+            const marginBottom = parseFloat(document.getElementById('margin_bottom_mm').value) || 0;
+            const marginLeft = parseFloat(document.getElementById('margin_left_mm').value) || 0;
+            const font = document.getElementById('font_name').value || 'Arial';
+            
+            const textWidth = Math.max(0, width - marginLeft - marginRight);
+            const textHeight = Math.max(0, height - marginTop - marginBottom);
+            
+            const preview = document.getElementById('dimensionPreview');
+            preview.innerHTML = `
+                Width: ${width.toFixed(1)}mm (${(width / 25.4).toFixed(2)}") × 
+                Height: ${height.toFixed(1)}mm (${(height / 25.4).toFixed(2)}")
+                <br>
+                Font: ${font}
+                <br>
+                Margins: T:${marginTop.toFixed(1)} R:${marginRight.toFixed(1)} B:${marginBottom.toFixed(1)} L:${marginLeft.toFixed(1)}mm
+                <br>
+                Text Area: ${textWidth.toFixed(1)}mm × ${textHeight.toFixed(1)}mm
+            `;
+        }
+        
+        // Add event listeners for real-time updates
+        document.getElementById('width_mm').addEventListener('input', updatePreview);
+        document.getElementById('height_mm').addEventListener('input', updatePreview);
+        document.getElementById('margin_top_mm').addEventListener('input', updatePreview);
+        document.getElementById('margin_right_mm').addEventListener('input', updatePreview);
+        document.getElementById('margin_bottom_mm').addEventListener('input', updatePreview);
+        document.getElementById('margin_left_mm').addEventListener('input', updatePreview);
+        document.getElementById('font_name').addEventListener('change', updatePreview);
+        
+        // Reset to defaults
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            if (confirm('Reset all settings to default values?')) {
+                document.getElementById('width_mm').value = '76.2';
+                document.getElementById('height_mm').value = '12.7';
+                document.getElementById('margin_top_mm').value = '1.0';
+                document.getElementById('margin_right_mm').value = '1.0';
+                document.getElementById('margin_bottom_mm').value = '1.0';
+                document.getElementById('margin_left_mm').value = '1.0';
+                document.getElementById('font_name').value = 'Arial';
+                updatePreview();
+            }
+        });
+        
+        // Initialize preview
+        updatePreview();
+        
+        // Handle cancel button to preserve navigation flow
+        document.getElementById('cancelBtn').addEventListener('click', function(e) {
+            e.preventDefault();
+            // Just go back to main page, wire IDs should be preserved in session
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>

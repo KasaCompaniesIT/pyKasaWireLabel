@@ -1,0 +1,121 @@
+# Core web framework
+Flask==2.3.3
+Werkzeug==2.3.7
+
+# PDF generation
+fpdf2==2.7.5
+
+# Image processing
+Pillow==10.0.1
+
+# Windows printer integration (Windows only)
+pywin32==306; sys_platform == "win32"
+
+# CSV handling (built into Python, but listing for completeness)
+# csv - built-in module
+
+# File handling and utilities
+# os, tempfile, io - built-in modules
+
+# Date and time handling
+# datetime - built-in module
+
+# System and platform detection
+# platform - built-in module
+
+# Development and testing dependencies (optional)
+pytest==7.4.2
+pytest-flask==1.2.0
+
+# Optional: Enhanced CSV handling
+pandas==2.1.1
+
+# Optional: Additional image format support
+# Already covered by Pillow
+
+# Optional: Better debugging in development
+flask-debugtoolbar==0.13.1
+
+# Security and session management
+# Covered by Flask's built-in session handling
+
+# File upload handling
+# Covered by Flask's built-in request handling
+
+# Configuration management
+# Built-in Python modules
+
+# Logging and debugging
+# Built-in Python logging module
+
+# JSON handling for profiles
+# Built-in json module
+
+# Math and calculations
+# Built-in math module
+
+# String processing and text handling
+# Built-in string modules
+
+# Regular expressions (if needed)
+# Built-in re module
+
+# Threading and async (if needed for printer communication)
+# Built-in threading module
+
+# Network requests (if needed for printer APIs)
+requests==2.31.0
+
+# Optional: Better error tracking in production
+# sentry-sdk==1.32.0
+
+# Optional: Environment variable management
+python-dotenv==1.0.0
+
+# Optional: Better configuration management
+configparser==5.3.0
+
+# Optional: Advanced font handling
+fonttools==4.42.1
+
+# Optional: Color management
+colorsys==1.0.0
+
+# Optional: Advanced PDF features
+reportlab==4.0.4
+
+# Optional: Barcode generation (if implementing barcode labels)
+python-barcode==0.14.0
+
+# Optional: QR code generation (if implementing QR code labels)
+qrcode==7.4.2
+
+# Optional: Better CLI interface for development
+click==8.1.7
+
+# Optional: Performance monitoring
+psutil==5.9.5
+
+# Optional: Better logging
+coloredlogs==15.0.1
+
+# Optional: Data validation
+jsonschema==4.19.1
+
+# Optional: Better datetime handling
+python-dateutil==2.8.2
+
+# Optional: Configuration file formats
+PyYAML==6.0.1
+
+# Optional: Enhanced text processing
+textdistance==4.6.0
+
+# Optional: File watching for development
+watchdog==3.0.0
+
+# Optional: Better HTTP handling
+urllib3==2.0.4
+
+# Optional: Encryption for sensitive settings
+cryptography==41.0.4
