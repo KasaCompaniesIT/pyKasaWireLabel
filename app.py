@@ -473,6 +473,22 @@ def select_profile():
     
     return redirect(url_for('index'))
 
+@app.route('/select_printer', methods=['POST'])
+def select_printer():
+    """Select a printer"""
+    try:
+        printer_name = request.form.get('printer_name', '')
+        if printer_name:
+            session['selected_printer'] = printer_name
+            flash(f'Printer selected: {printer_name}', 'success')
+        else:
+            flash('Please select a printer', 'error')
+            
+    except Exception as e:
+        flash(f'Error selecting printer: {str(e)}', 'error')
+    
+    return redirect(url_for('index'))
+
 @app.route('/settings_login', methods=['GET', 'POST'])
 def settings_login():
     """Login page for settings access"""
