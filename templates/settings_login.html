@@ -145,11 +145,6 @@
             
             <form method="POST">
                 <div class="form-group">
-                    <label for="username">Username:</label>
-                    <input type="text" id="username" name="username" required autocomplete="username" value="{{ username or '' }}">
-                </div>
-                
-                <div class="form-group">
                     <label for="password">Password:</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password">
                 </div>
@@ -158,29 +153,27 @@
                 <a href="/" class="btn-back">Back to Labels</a>
             </form>
             
-            <div class="info-message" style="margin-top: 30px;">
-                <strong>Default Credentials:</strong><br>
-                Username: <code>admin</code><br>
+            {# <div class="info-message" style="margin-top: 30px;">
+                <strong>Default Password:</strong><br>
                 Password: <code>wirelabel</code><br>
-                <small>Change these credentials in the settings after first login.</small>
-            </div>
+                <small>Change this password in the settings after first login.</small>
+            </div> #}
         </div>
     </div>
     
     <script>
-        // Focus on username field when page loads
+        // Focus on password field when page loads
         window.onload = function() {
-            document.getElementById('username').focus();
+            document.getElementById('password').focus();
         };
         
         // Handle form submission
         document.querySelector('form').addEventListener('submit', function(e) {
-            const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value;
             
-            if (!username || !password) {
+            if (!password) {
                 e.preventDefault();
-                alert('Please enter both username and password.');
+                alert('Please enter the password.');
                 return false;
             }
         });

@@ -3,333 +3,772 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wire Label Generator</title>
+    <title>Kasa Wire Label Printer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <style>
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        .form-section {
-            background: #f5f5f5;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 8px;
-            border: 1px solid #ddd;
-        }
-        
-        .form-row {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 15px;
-            align-items: center;
-        }
-        
-        .form-group {
-            flex: 1;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-        
-        .form-group input, .form-group select, .form-group textarea {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-        
-        .form-group textarea {
-            height: 200px;
-            font-family: monospace;
-        }
-        
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin: 20px 0;
-        }
-        
-        button {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .btn-primary {
-            background-color: #007bff;
-            color: white;
-        }
-        
-        .btn-secondary {
-            background-color: #6c757d;
-            color: white;
-        }
-        
-        .btn-success {
-            background-color: #28a745;
-            color: white;
-        }
-        
-        .btn-warning {
-            background-color: #ffc107;
-            color: black;
-        }
-        
-        button:hover {
-            opacity: 0.9;
-        }
-        
-        .status-message {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-        
-        .status-success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .status-error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
-        .status-warning {
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
-        }
-        
-        .profile-info {
-            background: #e3f2fd;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }
-        
-        .printer-status {
-            font-weight: bold;
-            padding: 5px 10px;
-            border-radius: 4px;
-            display: inline-block;
-            margin-left: 10px;
-        }
-        
-        .printer-ready { background-color: #d4edda; color: #155724; }
-        .printer-error { background-color: #f8d7da; color: #721c24; }
-        .printer-offline { background-color: #f8d7da; color: #721c24; }
-        .printer-busy { background-color: #fff3cd; color: #856404; }
-    </style>
 </head>
 <body>
     <div class="container">
-        <h1>Wire Label Generator</h1>
+        <h1>🏷️ Kasa Wire Label Printer</h1>
         
-        <!-- Status Messages -->
-        {% if messages %}
-            {% for category, message in messages %}
-                <div class="status-message status-{{ category }}">
-                    {{ message }}
+        <!-- Profile and Settings Section -->
+        <div class="settings-section">
+            <div class="profile-row">
+                <div class="profile-group">
+                    <form method="POST" action="/select_profile" class="profile-form">
+                        <label for="profile_select" class="profile-label">🏷️ Label Profile:</label>
+                        <select id="profile_select" name="profile_name" class="profile-select" onchange="this.form.submit()">
+                            {% for profile_name in profiles.keys() %}
+                            <option value="{{ profile_name }}" {% if profile_name == current_profile %}selected{% endif %}>
+                                {{ profile_name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <a href="/settings" class="settings-link" id="settingsLink">⚙️ Settings</a>
+                    </form>
                 </div>
-            {% endfor %}
-        {% endif %}
-        
-        <!-- Profile Information -->
-        {% if profile %}
-        <div class="profile-info">
-            <h3>Current Profile: {{ profile.name }}</h3>
-            <p><strong>Description:</strong> {{ profile.description }}</p>
-            <p><strong>Printer:</strong> {{ profile.printer_name }}
-                {% if printer_status %}
-                    <span class="printer-status printer-{{ printer_status.lower().replace(' ', '-') }}">
-                        {{ printer_status }}
-                    </span>
+            </div>
+            
+            <!-- Printer Section -->
+            {% if printer_info.available %}
+            <div class="profile-row">
+                <div class="profile-group">
+                    <form method="POST" action="/select_printer" class="profile-form">
+                        <label for="printer_select" class="profile-label">🖨️ Printer:</label>
+                        <select id="printer_select" name="printer_name" class="profile-select" onchange="this.form.submit()">
+                            <option value="">No printer selected</option>
+                            {% for printer in printer_info.printers %}
+                            <option value="{{ printer }}" {% if printer == settings.selected_printer %}selected{% endif %}>
+                                {{ printer }}{% if printer == printer_info.default %} (Default){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Current Profile Info -->
+            <div style="margin-top: 10px; font-size: 14px; color: #666;">
+                <strong>Current Profile:</strong> {{ current_profile }} - {{ "%.3f"|format(settings.width_inches) }}" wide, {{ settings.lines_per_label }} lines, {{ settings.labels_per_row }} per row, 
+                Font: {{ settings.font_name }} {{ 'Bold' if settings.font_bold else '' }} {{ settings.font_size }}pt{{ ', Autosize Font: Yes' if settings.auto_size_font else '' }}
+                {% if printer_info.available and settings.selected_printer %}
+                <br><strong>Printer:</strong> {{ settings.selected_printer }} - Status: Ready
                 {% endif %}
-            </p>
-            <p><strong>Margins:</strong> T:{{ profile.margin_top }}" L:{{ profile.margin_left }}" R:{{ profile.margin_right }}" B:{{ profile.margin_bottom }}"</p>
-            <p><strong>Spacing:</strong> H:{{ profile.horizontal_spacing }}" V:{{ profile.vertical_spacing }}"</p>
+            </div>
         </div>
-        {% endif %}
         
-        <form method="POST" enctype="multipart/form-data">
-            <!-- Label Data Input Section -->
-            <div class="form-section">
-                <h2>Label Data Input</h2>
-                
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'error' if category == 'error' else 'success' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <form id="labelForm" method="POST">
+            <!-- Add Wire IDs Section -->
+            <div class="settings-section">
+                <h2>Add Wire IDs</h2>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="input_method">Input Method:</label>
-                        <select name="input_method" id="input_method" onchange="toggleInputMethod()">
-                            <option value="manual" {{ 'selected' if input_method == 'manual' else '' }}>Manual Entry</option>
-                            <option value="csv" {{ 'selected' if input_method == 'csv' else '' }}>CSV Upload</option>
-                        </select>
+                        <label for="wireIdInput">Wire ID *</label>
+                        <input type="text" id="wireIdInput" placeholder="e.g., PWR-001" required>
+                    </div>
+                    <div class="form-group" style="flex: 0 0 100px;">
+                        <label for="qtyInput">Quantity *</label>
+                        <input type="number" id="qtyInput" value="1" min="1" max="999" required>
+                    </div>
+                    <div style="flex: 0 0 auto; display: flex; gap: 10px; align-items: end;">
+                        <button type="button" id="addWireIdBtn" class="btn-success">✅ Add</button>
+                        <button type="button" id="decimalSeqBtn" class="btn-primary">🔢 Decimal Sequence</button>
                     </div>
                 </div>
-                
-                <!-- Manual Entry -->
-                <div id="manual_input" style="{{ 'display: none;' if input_method == 'csv' else '' }}">
-                    <div class="form-group">
-                        <label for="label_data">Label Data (one per line):</label>
-                        <textarea name="label_data" id="label_data" placeholder="Enter label data, one per line:&#10;WIRE-001&#10;WIRE-002&#10;WIRE-003">{{ label_data or '' }}</textarea>
-                    </div>
-                </div>
-                
-                <!-- CSV Upload -->
-                <div id="csv_input" style="{{ 'display: none;' if input_method == 'manual' else '' }}">
-                    <div class="form-group">
-                        <label for="csv_file">CSV File:</label>
-                        <input type="file" name="csv_file" id="csv_file" accept=".csv">
-                    </div>
-                    <div class="form-group">
-                        <label for="csv_column">CSV Column (0-based index or column name):</label>
-                        <input type="text" name="csv_column" id="csv_column" value="{{ csv_column or '0' }}" placeholder="0 or column_name">
-                    </div>
+                <div class="help-text">
+                    Enter a Wire ID and quantity, then click Add or press Enter. The quantity will be remembered for the next entry.
                 </div>
             </div>
             
-            <!-- Print Options Section -->
-            <div class="form-section">
-                <h2>Print Options</h2>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="print_method">Print Method:</label>
-                        <select name="print_method" id="print_method">
-                            <option value="sequential" {{ 'selected' if print_method == 'sequential' else '' }}>Sequential (Bulk PDF)</option>
-                            <option value="individual" {{ 'selected' if print_method == 'individual' else '' }}>Individual Labels</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="action">Action:</label>
-                        <select name="action" id="action">
-                            <option value="preview" {{ 'selected' if action == 'preview' else '' }}>Preview Only</option>
-                            <option value="print" {{ 'selected' if action == 'print' else '' }}>Print Labels</option>
-                        </select>
+            <!-- Wire ID List Section -->
+            <div class="settings-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2>Wire ID List</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" id="sortBtn" class="btn btn-info">📊 Sort A-Z</button>
+                        <button type="button" id="clearAllBtn" class="btn btn-danger">🗑️ Clear All</button>
                     </div>
                 </div>
                 
-                {% if profile and profile.printer_name %}
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="copies">Number of Copies:</label>
-                        <input type="number" name="copies" id="copies" value="{{ copies or '1' }}" min="1" max="10">
-                    </div>
+                <table class="wire-table" id="wireIdTable">
+                    <thead>
+                        <tr>
+                            <th>Wire ID</th>
+                            <th style="width: 100px; text-align: center;">Quantity</th>
+                            <th style="width: 80px; text-align: center;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wireIdTableBody">
+                        <tr class="empty-row">
+                            <td colspan="3" style="text-align: center; color: #999; font-style: italic; padding: 30px;">
+                                No Wire IDs added yet. Use the form above to add Wire IDs.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <div class="table-summary" id="tableSummary" style="display: none; margin-top: 10px;">
+                    <strong>Summary:</strong> <span id="summaryText">0 Wire IDs, 0 total labels</span>
                 </div>
-                {% endif %}
             </div>
             
-            <!-- Advanced Options Section -->
-            <div class="form-section">
-                <h2>Advanced Options</h2>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="font_size">Font Size (points):</label>
-                        <input type="number" name="font_size" id="font_size" value="{{ font_size or '8' }}" min="6" max="72" step="1">
-                    </div>
-                    <div class="form-group">
-                        <label for="bold_text">Bold Text:</label>
-                        <select name="bold_text" id="bold_text">
-                            <option value="false" {{ 'selected' if not bold_text else '' }}>No</option>
-                            <option value="true" {{ 'selected' if bold_text else '' }}>Yes</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="text_color">Text Color:</label>
-                        <select name="text_color" id="text_color">
-                            <option value="black" {{ 'selected' if text_color == 'black' else '' }}>Black</option>
-                            <option value="blue" {{ 'selected' if text_color == 'blue' else '' }}>Blue</option>
-                            <option value="red" {{ 'selected' if text_color == 'red' else '' }}>Red</option>
-                            <option value="green" {{ 'selected' if text_color == 'green' else '' }}>Green</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="alignment">Text Alignment:</label>
-                        <select name="alignment" id="alignment">
-                            <option value="left" {{ 'selected' if alignment == 'left' else '' }}>Left</option>
-                            <option value="center" {{ 'selected' if alignment == 'center' else '' }}>Center</option>
-                            <option value="right" {{ 'selected' if alignment == 'right' else '' }}>Right</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
+            <!-- Hidden textarea for form submission -->
+            <textarea id="wire_ids" name="wire_ids" style="display: none;"></textarea>
             
             <!-- Action Buttons -->
             <div class="button-group">
-                <button type="submit" class="btn-primary">Generate Labels</button>
-                <button type="button" class="btn-secondary" onclick="clearForm()">Clear Form</button>
-                {% if profile %}
-                <a href="/settings" class="btn-warning" style="text-decoration: none; display: inline-block; padding: 10px 20px;">Profile Settings</a>
+                {% if printer_info.available and settings.selected_printer %}
+                <button type="button" id="printBtn" class="btn-success" style="width: 48%;">
+                    🖨️ Print to {{ settings.selected_printer[:20] }}{{ '...' if settings.selected_printer|length > 20 else '' }}
+                </button>
                 {% endif %}
+                <button type="button" id="generateBtn" class="btn-primary" style="width: 48%;">
+                    📊 Export to CSV
+                </button>
             </div>
         </form>
         
-        <!-- Results Section -->
-        {% if pdf_url %}
-        <div class="form-section">
-            <h2>Generated PDF</h2>
-            <p>Your labels have been generated successfully!</p>
-            <div class="button-group">
-                <a href="{{ pdf_url }}" target="_blank" class="btn-success" style="text-decoration: none; display: inline-block; padding: 10px 20px;">View PDF</a>
-                <a href="{{ pdf_url }}" download class="btn-secondary" style="text-decoration: none; display: inline-block; padding: 10px 20px;">Download PDF</a>
+        <!-- Import Section -->
+        <div class="import-section">
+            <h3 style="margin-top: 0; margin-bottom: 15px; color: #495057;">📁 Import Wire IDs</h3>
+            <div class="import-buttons">
+                <button type="button" id="importCSVBtn" class="btn btn-primary">📄 Import CSV</button>
+                <button type="button" id="importLegacyBtn" class="btn btn-secondary">📜 Import Legacy</button>
+            </div>
+            
+            <!-- Hidden file inputs -->
+            <form id="importForm" method="POST" enctype="multipart/form-data" action="/import_csv" style="display: none;">
+                <input type="file" id="csvFileInput" name="csv_file" accept=".csv">
+            </form>
+            
+            <form id="importLegacyForm" method="POST" enctype="multipart/form-data" action="/import_legacy" style="display: none;">
+                <input type="file" id="legacyFileInput" name="legacy_file" accept=".lbl">
+            </form>
+            
+            <div class="help-text" style="margin-top: 10px; font-size: 12px;">
+                <strong>CSV:</strong> Import previously exported files | <strong>Legacy:</strong> Import old format files
             </div>
         </div>
-        {% endif %}
-        
-        <!-- Debug Information -->
-        {% if debug_info %}
-        <div class="form-section">
-            <h2>Debug Information</h2>
-            <pre style="background: #f8f9fa; padding: 15px; border-radius: 4px; overflow-x: auto;">{{ debug_info }}</pre>
-        </div>
-        {% endif %}
     </div>
     
+    <!-- Decimal Sequence Modal -->
+    <div id="decimalSequenceModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Generate Decimal Sequence</h3>
+                <button type="button" class="close-btn" onclick="closeDecimalModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modalPrefix">Prefix:</label>
+                        <input type="text" id="modalPrefix" placeholder="e.g., WIRE" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div class="form-group">
+                        <label for="modalSuffix">Suffix:</label>
+                        <input type="text" id="modalSuffix" placeholder="e.g., -A" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modalStart">Start:</label>
+                        <input type="number" id="modalStart" value="1" min="0" step="0.001" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div class="form-group">
+                        <label for="modalStop">Stop:</label>
+                        <input type="number" id="modalStop" value="10" min="0" step="0.001" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div class="form-group">
+                        <label for="modalIncrement">Increment by:</label>
+                        <input type="number" id="modalIncrement" value="1" min="0.001" step="0.001" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modalQtyEach">Qty Each:</label>
+                        <input type="number" id="modalQtyEach" value="1" min="1" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: center; padding-top: 25px;">
+                        <input type="checkbox" id="modalLeadingZeros" checked style="margin-right: 8px;">
+                        <label for="modalLeadingZeros" style="margin: 0; cursor: pointer;">Leading Zeros (3 digits)</label>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 4px; border-left: 4px solid #007bff;">
+                    <div style="font-weight: bold; margin-bottom: 8px; color: #495057;">Preview:</div>
+                    <div id="sequencePreview" style="font-family: monospace; color: #6c757d; font-size: 13px; line-height: 1.4;">
+                        Enter values to see preview
+                    </div>
+                    <div id="sequenceCount" style="margin-top: 8px; font-size: 12px; color: #6c757d; font-weight: 500;">
+                        Total items: 0
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeDecimalModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmDecimalSequence()">Generate Sequence</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        function toggleInputMethod() {
-            const method = document.getElementById('input_method').value;
-            const manualDiv = document.getElementById('manual_input');
-            const csvDiv = document.getElementById('csv_input');
+        // Wire ID management
+        let wireIdList = [];
+        
+        // Load existing wire IDs from the hidden textarea if any
+        function loadExistingWireIds() {
+            const existingData = {{ (wire_ids if wire_ids else "")|tojson }};
+            console.log('Loading existing wire IDs:', existingData);
             
-            if (method === 'manual') {
-                manualDiv.style.display = 'block';
-                csvDiv.style.display = 'none';
-            } else {
-                manualDiv.style.display = 'none';
-                csvDiv.style.display = 'block';
+            if (existingData && existingData.trim()) {
+                const lines = existingData.split('\n');
+                console.log('Lines to process:', lines);
+                
+                lines.forEach(line => {
+                    line = line.trim();
+                    if (!line) return;
+                    
+                    if (line.includes(',')) {
+                        const parts = line.split(',');
+                        const wireId = parts[0].trim();
+                        const quantity = parseInt(parts[1]) || 1;
+                        
+                        if (wireId) {
+                            wireIdList.push({ wireId: wireId, quantity: quantity });
+                        }
+                    } else {
+                        wireIdList.push({ wireId: line, quantity: 1 });
+                    }
+                });
+                
+                updateTable();
+                console.log('Loaded wire IDs:', wireIdList);
             }
         }
         
-        function clearForm() {
-            document.getElementById('label_data').value = '';
-            document.getElementById('csv_file').value = '';
-            document.getElementById('csv_column').value = '0';
-            document.getElementById('font_size').value = '8';
-            document.getElementById('bold_text').value = 'false';
-            document.getElementById('text_color').value = 'black';
-            document.getElementById('alignment').value = 'left';
-            document.getElementById('copies').value = '1';
+        // Add wire ID to the list
+        function addWireId() {
+            const wireIdInput = document.getElementById('wireIdInput');
+            const qtyInput = document.getElementById('qtyInput');
+            
+            const wireId = wireIdInput.value.trim().toUpperCase();
+            const quantity = parseInt(qtyInput.value) || 1;
+            
+            if (!wireId) {
+                alert('Please enter a Wire ID');
+                wireIdInput.focus();
+                return;
+            }
+            
+            // Check for duplicates
+            const existing = wireIdList.find(item => item.wireId === wireId);
+            if (existing) {
+                if (confirm(`Wire ID "${wireId}" already exists with quantity ${existing.quantity}. Add ${quantity} more (total will be ${existing.quantity + quantity})?`)) {
+                    existing.quantity += quantity;
+                } else {
+                    wireIdInput.focus();
+                    return;
+                }
+            } else {
+                wireIdList.push({ wireId: wireId, quantity: quantity });
+            }
+            
+            wireIdInput.value = '';
+            wireIdInput.focus();
+            
+            updateTable();
+            updateHiddenTextarea();
         }
         
-        // Initialize form on page load
-        window.onload = function() {
-            toggleInputMethod();
-        };
+        // Generate decimal sequence
+        function generateDecimalSequence() {
+            const wireIdInput = document.getElementById('wireIdInput');
+            const qtyInput = document.getElementById('qtyInput');
+            
+            // Pre-fill modal with current form values
+            const currentWireId = wireIdInput.value.trim().toUpperCase();
+            
+            // Try to separate prefix and number from current Wire ID
+            if (currentWireId) {
+                const match = currentWireId.match(/^([A-Za-z]*)(\d*)([A-Za-z]*)$/);
+                if (match) {
+                    document.getElementById('modalPrefix').value = match[1] || currentWireId;
+                    if (match[2]) {
+                        document.getElementById('modalStart').value = match[2];
+                        document.getElementById('modalStop').value = parseInt(match[2]) + 9;
+                    }
+                    document.getElementById('modalSuffix').value = match[3] || '';
+                } else {
+                    document.getElementById('modalPrefix').value = currentWireId;
+                }
+            }
+            
+            document.getElementById('modalQtyEach').value = qtyInput.value || '1';
+            
+            // Show modal
+            document.getElementById('decimalSequenceModal').style.display = 'block';
+            
+            // Focus on prefix input
+            setTimeout(() => {
+                document.getElementById('modalPrefix').focus();
+            }, 100);
+            
+            updateSequencePreview();
+        }
+        
+        // Update sequence preview
+        function updateSequencePreview() {
+            const prefix = document.getElementById('modalPrefix').value.trim();
+            const suffix = document.getElementById('modalSuffix').value.trim();
+            const start = parseFloat(document.getElementById('modalStart').value) || 0;
+            const stop = parseFloat(document.getElementById('modalStop').value) || 0;
+            const increment = parseFloat(document.getElementById('modalIncrement').value) || 1;
+            const qtyEach = parseInt(document.getElementById('modalQtyEach').value) || 1;
+            const leadingZeros = document.getElementById('modalLeadingZeros').checked;
+            
+            const previewElement = document.getElementById('sequencePreview');
+            const countElement = document.getElementById('sequenceCount');
+            
+            // Validation
+            if (start > stop) {
+                previewElement.textContent = 'Start must be less than or equal to Stop';
+                countElement.textContent = 'Total items: 0';
+                return;
+            }
+            
+            if (increment <= 0) {
+                previewElement.textContent = 'Increment must be greater than 0';
+                countElement.textContent = 'Total items: 0';
+                return;
+            }
+            
+            // Calculate sequence (handle decimal increments with precision)
+            const numbers = [];
+            const steps = Math.floor((stop - start) / increment) + 1;
+            
+            for (let step = 0; step < steps; step++) {
+                const value = start + (step * increment);
+                if (value <= stop) {
+                    numbers.push(value);
+                }
+            }
+            
+            if (numbers.length === 0) {
+                previewElement.textContent = 'No numbers in range';
+                countElement.textContent = 'Total items: 0';
+                return;
+            }
+            
+            // Generate preview
+            let preview = '';
+            const showCount = Math.min(numbers.length, 5);
+            
+            for (let i = 0; i < showCount; i++) {
+                const num = numbers[i];
+                // Format number: remove unnecessary decimal places, then apply leading zeros if requested
+                let formattedNum = num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/\.?0+$/, '');
+                
+                if (leadingZeros && num % 1 === 0) {
+                    // Only apply leading zeros to whole numbers
+                    formattedNum = formattedNum.padStart(3, '0');
+                }
+                
+                const wireId = prefix + formattedNum + suffix;
+                
+                if (i > 0) preview += '\n';
+                
+                if (qtyEach === 1) {
+                    preview += wireId;
+                } else {
+                    preview += `${wireId} (qty: ${qtyEach})`;
+                }
+            }
+            
+            if (numbers.length > 5) {
+                preview += `\n... and ${numbers.length - 5} more`;
+            }
+            
+            previewElement.textContent = preview;
+            
+            // Calculate total items
+            const totalUniqueIds = numbers.length;
+            const totalLabels = totalUniqueIds * qtyEach;
+            countElement.textContent = `Total items: ${totalUniqueIds} unique IDs, ${totalLabels} total labels`;
+        }
+        
+        // Close decimal modal
+        function closeDecimalModal() {
+            document.getElementById('decimalSequenceModal').style.display = 'none';
+        }
+        
+        // Confirm decimal sequence generation
+        function confirmDecimalSequence() {
+            const prefix = document.getElementById('modalPrefix').value.trim();
+            const suffix = document.getElementById('modalSuffix').value.trim();
+            const start = parseFloat(document.getElementById('modalStart').value);
+            const stop = parseFloat(document.getElementById('modalStop').value);
+            const increment = parseFloat(document.getElementById('modalIncrement').value) || 1;
+            const qtyEach = parseInt(document.getElementById('modalQtyEach').value) || 1;
+            const leadingZeros = document.getElementById('modalLeadingZeros').checked;
+            
+            // Validation
+            if (isNaN(start) || isNaN(stop)) {
+                alert('Please enter valid Start and Stop numbers');
+                return;
+            }
+            
+            if (start > stop) {
+                alert('Start must be less than or equal to Stop');
+                return;
+            }
+            
+            if (increment <= 0) {
+                alert('Increment must be greater than 0');
+                return;
+            }
+            
+            if (qtyEach <= 0) {
+                alert('Quantity Each must be greater than 0');
+                return;
+            }
+            
+            // Calculate sequence (handle decimal increments with precision)
+            const numbers = [];
+            const steps = Math.floor((stop - start) / increment) + 1;
+            
+            for (let step = 0; step < steps; step++) {
+                const value = start + (step * increment);
+                if (value <= stop) {
+                    numbers.push(value);
+                }
+            }
+            
+            if (numbers.length === 0) {
+                alert('No numbers in the specified range');
+                return;
+            }
+            
+            // Confirm generation
+            const totalUniqueIds = numbers.length;
+            const totalLabels = totalUniqueIds * qtyEach;
+            
+            if (!confirm(`Generate ${totalUniqueIds} unique Wire IDs (${totalLabels} total labels)?`)) {
+                return;
+            }
+            
+            // Generate the sequence
+            let addedCount = 0;
+            numbers.forEach(num => {
+                // Format number: remove unnecessary decimal places, then apply leading zeros if requested
+                let formattedNum = num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/\.?0+$/, '');
+                
+                if (leadingZeros && num % 1 === 0) {
+                    // Only apply leading zeros to whole numbers
+                    formattedNum = formattedNum.padStart(3, '0');
+                }
+                
+                const wireId = prefix + formattedNum + suffix;
+                
+                // Check for duplicates
+                const existing = wireIdList.find(item => item.wireId === wireId);
+                if (existing) {
+                    // Add to existing quantity
+                    existing.quantity += qtyEach;
+                } else {
+                    // Add new wire ID
+                    wireIdList.push({ wireId: wireId, quantity: qtyEach });
+                    addedCount++;
+                }
+            });
+            
+            // Update display
+            updateTable();
+            updateHiddenTextarea();
+            
+            // Close modal
+            closeDecimalModal();
+            
+            // Clear original form
+            document.getElementById('wireIdInput').value = '';
+            document.getElementById('qtyInput').value = '1';
+            document.getElementById('wireIdInput').focus();
+            
+            // Show success message
+            if (addedCount > 0) {
+                alert(`Successfully added ${addedCount} new Wire IDs to the list!`);
+            } else {
+                alert('All Wire IDs already existed. Quantities have been updated.');
+            }
+        }
+        
+        // Remove wire ID from the list
+        function removeWireId(index) {
+            if (confirm(`Remove "${wireIdList[index].wireId}" from the list?`)) {
+                wireIdList.splice(index, 1);
+                updateTable();
+                updateHiddenTextarea();
+            }
+        }
+        
+        // Update the table display
+        function updateTable() {
+            const tbody = document.getElementById('wireIdTableBody');
+            tbody.innerHTML = '';
+            
+            if (wireIdList.length === 0) {
+                tbody.innerHTML = `
+                    <tr class="empty-row">
+                        <td colspan="3" style="text-align: center; color: #999; font-style: italic; padding: 30px;">
+                            No Wire IDs added yet. Use the form above to add Wire IDs.
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('tableSummary').style.display = 'none';
+            } else {
+                wireIdList.forEach((item, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td style="padding: 8px;"><strong>${item.wireId}</strong></td>
+                        <td style="padding: 8px; text-align: center;">${item.quantity}</td>
+                        <td style="padding: 8px; text-align: center;">
+                            <button type="button" class="btn-danger" onclick="removeWireId(${index})" style="padding: 4px 8px; font-size: 12px;">🗑️</button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                
+                // Update summary
+                const totalLabels = wireIdList.reduce((sum, item) => sum + item.quantity, 0);
+                document.getElementById('summaryText').textContent = 
+                    `${wireIdList.length} Wire ID${wireIdList.length !== 1 ? 's' : ''}, ${totalLabels} total labels`;
+                document.getElementById('tableSummary').style.display = 'block';
+            }
+        }
+        
+        // Update hidden textarea for form submission
+        function updateHiddenTextarea() {
+            const textarea = document.getElementById('wire_ids');
+            const lines = wireIdList.map(item => `${item.wireId},${item.quantity}`);
+            textarea.value = lines.join('\n');
+        }
+        
+        // Clear all wire IDs
+        function clearAllWireIds() {
+            if (wireIdList.length === 0) {
+                alert('No Wire IDs to clear');
+                return;
+            }
+            
+            if (confirm(`Clear all ${wireIdList.length} Wire IDs from the list?`)) {
+                wireIdList = [];
+                updateTable();
+                updateHiddenTextarea();
+                
+                // Clear from session
+                fetch('/save_temp_wire_ids', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'wire_ids='
+                });
+            }
+        }
+        
+        // Sort wire IDs alphabetically
+        function sortWireIds() {
+            wireIdList.sort((a, b) => a.wireId.localeCompare(b.wireId));
+            updateTable();
+            updateHiddenTextarea();
+        }
+        
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, setting up event listeners');
+            
+            // Add button
+            const addBtn = document.getElementById('addWireIdBtn');
+            if (addBtn) {
+                addBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    addWireId();
+                });
+            }
+            
+            // Decimal sequence button
+            const decimalSeqBtn = document.getElementById('decimalSeqBtn');
+            if (decimalSeqBtn) {
+                decimalSeqBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    generateDecimalSequence();
+                });
+            }
+            
+            // Other buttons
+            const clearBtn = document.getElementById('clearAllBtn');
+            const sortBtn = document.getElementById('sortBtn');
+            
+            if (clearBtn) clearBtn.addEventListener('click', clearAllWireIds);
+            if (sortBtn) sortBtn.addEventListener('click', sortWireIds);
+            
+            // Add wire ID on Enter key
+            const wireIdInput = document.getElementById('wireIdInput');
+            const qtyInput = document.getElementById('qtyInput');
+            
+            if (wireIdInput) {
+                wireIdInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addWireId();
+                    }
+                });
+            }
+            
+            if (qtyInput) {
+                qtyInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addWireId();
+                    }
+                });
+            }
+            
+            // Modal event listeners
+            const modal = document.getElementById('decimalSequenceModal');
+            const modalPrefix = document.getElementById('modalPrefix');
+            const modalSuffix = document.getElementById('modalSuffix');
+            const modalStart = document.getElementById('modalStart');
+            const modalStop = document.getElementById('modalStop');
+            const modalIncrement = document.getElementById('modalIncrement');
+            const modalQtyEach = document.getElementById('modalQtyEach');
+            const modalLeadingZeros = document.getElementById('modalLeadingZeros');
+            
+            // Update preview when modal inputs change
+            const updatePreviewInputs = [modalPrefix, modalSuffix, modalStart, modalStop, modalIncrement, modalQtyEach, modalLeadingZeros];
+            updatePreviewInputs.forEach(input => {
+                if (input) {
+                    input.addEventListener('input', updateSequencePreview);
+                    input.addEventListener('change', updateSequencePreview);
+                }
+            });
+            
+            // Close modal when clicking outside
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        closeDecimalModal();
+                    }
+                });
+            }
+            
+            // Modal form submission on Enter
+            const modalFormInputs = [modalPrefix, modalSuffix, modalStart, modalStop, modalIncrement, modalQtyEach];
+            modalFormInputs.forEach(input => {
+                if (input) {
+                    input.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            confirmDecimalSequence();
+                        }
+                    });
+                }
+            });
+            
+            // Close modal on Escape key
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && modal.style.display === 'block') {
+                    closeDecimalModal();
+                }
+            });
+            
+            // Import buttons
+            const importCSVBtn = document.getElementById('importCSVBtn');
+            const importLegacyBtn = document.getElementById('importLegacyBtn');
+            
+            if (importCSVBtn) {
+                importCSVBtn.addEventListener('click', function() {
+                    document.getElementById('csvFileInput').click();
+                });
+            }
+            
+            if (importLegacyBtn) {
+                importLegacyBtn.addEventListener('click', function() {
+                    document.getElementById('legacyFileInput').click();
+                });
+            }
+            
+            // File input change handlers
+            const csvFileInput = document.getElementById('csvFileInput');
+            const legacyFileInput = document.getElementById('legacyFileInput');
+            
+            if (csvFileInput) {
+                csvFileInput.addEventListener('change', function() {
+                    if (this.files.length > 0) {
+                        document.getElementById('importForm').submit();
+                    }
+                });
+            }
+            
+            if (legacyFileInput) {
+                legacyFileInput.addEventListener('change', function() {
+                    if (this.files.length > 0) {
+                        document.getElementById('importLegacyForm').submit();
+                    }
+                });
+            }
+            
+            // Initialize
+            loadExistingWireIds();
+        });
+        
+        // Generate button
+        document.getElementById('generateBtn').addEventListener('click', function() {
+            if (wireIdList.length === 0) {
+                alert('Please add at least one Wire ID');
+                document.getElementById('wireIdInput').focus();
+                return;
+            }
+            
+            updateHiddenTextarea();
+            
+            const form = document.getElementById('labelForm');
+            form.action = '/create_label';
+            form.submit();
+        });
+        
+        {% if printer_info.available and settings.selected_printer %}
+        // Print button
+        document.getElementById('printBtn').addEventListener('click', function() {
+            if (wireIdList.length === 0) {
+                alert('Please add at least one Wire ID');
+                document.getElementById('wireIdInput').focus();
+                return;
+            }
+            
+            const totalLabels = wireIdList.reduce((sum, item) => sum + item.quantity, 0);
+            
+            if (confirm(`Print ${totalLabels} total labels directly to {{ settings.selected_printer }}?`)) {
+                updateHiddenTextarea();
+                
+                const form = document.getElementById('labelForm');
+                form.action = '/print_labels';
+                form.submit();
+            }
+        });
+        {% endif %}
     </script>
 </body>
 </html>

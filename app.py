@@ -61,21 +61,36 @@ def get_label_settings():
     default_spacing_h = 6.1  # 155mm = 6.1 inches spacing
     default_spacing_v = 1.8  # 1.8 inches vertical spacing (updated from 1.5")
     
+    # Get values in inches
+    width_inches = session.get('label_width_inches', default_width)
+    height_inches = session.get('label_printable_height_inches', default_height)
+    margin_top_inches = session.get('page_margin_top_inches', 0.0)
+    margin_left_inches = session.get('page_margin_left_inches', 0.0)
+    margin_right_inches = session.get('page_margin_right_inches', 0.0)
+    margin_bottom_inches = session.get('page_margin_bottom_inches', 0.0)
+    
     return {
-        'width_inches': session.get('label_width_inches', default_width),
+        'width_inches': width_inches,
         'font_name': session.get('label_font_name', 'Arial'),
         'font_size': session.get('label_font_size', default_font_size),
         'font_bold': session.get('label_font_bold', True),
         'auto_size_font': session.get('label_auto_size_font', False),  # Disabled for precise control
         'lines_per_label': session.get('lines_per_label', 4),
         'labels_per_row': session.get('labels_per_row', 4),  # 4 labels per row for sequential printing
-        'page_margin_top_inches': session.get('page_margin_top_inches', 0.0),  # Set to 0 as requested
-        'page_margin_left_inches': session.get('page_margin_left_inches', 0.0),  # Set to 0 as requested
-        'label_printable_height_inches': session.get('label_printable_height_inches', default_height),
+        'page_margin_top_inches': margin_top_inches,
+        'page_margin_left_inches': margin_left_inches,
+        'label_printable_height_inches': height_inches,
         'label_spacing_horizontal_inches': session.get('label_spacing_horizontal_inches', default_spacing_h),
         'label_spacing_vertical_inches': session.get('label_spacing_vertical_inches', default_spacing_v),
         'show_border': session.get('show_border', False),
-        'selected_printer': session.get('selected_printer', 'PTR3')  # Always SATO
+        'selected_printer': session.get('selected_printer', 'PTR3'),  # Always SATO
+        # Add mm conversions for template compatibility
+        'width_mm': width_inches * 25.4,
+        'height_mm': height_inches * 25.4,
+        'margin_top_mm': margin_top_inches * 25.4,
+        'margin_right_mm': margin_right_inches * 25.4,
+        'margin_bottom_mm': margin_bottom_inches * 25.4,
+        'margin_left_mm': margin_left_inches * 25.4
     }
 
 def get_default_profiles():
@@ -117,9 +132,13 @@ def load_profile(profile_name):
     
     return None
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
     """Main page with label creation form"""
+    if request.method == 'POST':
+        return handle_label_generation()
+    
+    # GET request - show the form
     settings = get_label_settings()
     # Restore any previously entered wire IDs from session
     wire_ids = session.get('temp_wire_ids', '')
@@ -151,7 +170,263 @@ def index():
                          profiles=all_profiles,
                          current_profile=current_profile)
 
-@app.route('/select_profile', methods=['POST'])
+def handle_label_generation():
+    """Handle the modern form submission for label generation"""
+    try:
+        # Get form data
+        input_method = request.form.get('input_method', 'manual')
+        data_format = request.form.get('data_format', 'simple')
+        action = request.form.get('action', 'preview')
+        print_method = request.form.get('print_method', 'sequential')
+        
+        # Label customization options
+        font_size = int(request.form.get('font_size', 8))
+        font_style = request.form.get('font_style', 'normal')
+        text_color = request.form.get('text_color', 'black')
+        alignment = request.form.get('alignment', 'left')
+        lines_per_label = int(request.form.get('lines_per_label', 3))
+        thermal_optimized = request.form.get('thermal_optimized', 'auto')
+        
+        # Print configuration
+        copies = int(request.form.get('copies', 1))
+        labels_per_row = int(request.form.get('labels_per_row', 1))
+        
+        # Process input based on method
+        wire_id_quantities = []
+        
+        if input_method == 'manual':
+            label_data = request.form.get('label_data', '').strip()
+            if not label_data:
+                flash('Please enter label data', 'error')
+                return redirect(url_for('index'))
+            
+            wire_id_quantities = parse_label_data(label_data, data_format)
+            
+        elif input_method == 'csv':
+            if 'csv_file' not in request.files:
+                flash('Please select a CSV file', 'error')
+                return redirect(url_for('index'))
+            
+            csv_file = request.files['csv_file']
+            if csv_file.filename == '':
+                flash('Please select a CSV file', 'error')
+                return redirect(url_for('index'))
+            
+            csv_column = request.form.get('csv_column', '0')
+            csv_qty_column = request.form.get('csv_qty_column', '')
+            csv_desc_column = request.form.get('csv_desc_column', '')
+            
+            wire_id_quantities = parse_csv_data(csv_file, csv_column, csv_qty_column, csv_desc_column, data_format)
+            
+        elif input_method == 'batch':
+            batch_prefix = request.form.get('batch_prefix', 'WIRE')
+            batch_start = int(request.form.get('batch_start', 1))
+            batch_count = int(request.form.get('batch_count', 10))
+            
+            wire_id_quantities = generate_batch_data(batch_prefix, batch_start, batch_count)
+        
+        if not wire_id_quantities:
+            flash('No valid label data found', 'error')
+            return redirect(url_for('index'))
+        
+        # Generate labels using optimized thermal settings for SATO M-84Pro
+        generator = WireLabelGenerator(
+            width_inches=5.91,  # SATO M-84Pro S100X150VATY label width (150mm)
+            printable_height_inches=3.94,  # SATO M-84Pro S100X150VATY label height (100mm)
+            margin_top_inches=0.0,
+            margin_left_inches=0.0,
+            margin_right_inches=0.0,
+            margin_bottom_inches=0.0,
+            font_name='Arial',
+            font_size=font_size,
+            font_bold=(font_style in ['bold', 'bold_italic']),
+            auto_size_font=False,  # Use exact font size for thermal precision
+            thermal_optimized=True,  # Always enabled for SATO
+            show_border=False
+        )
+        
+        # Generate the PDF using SATO M-84Pro optimization
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pdf_filename = f"wire_labels_{timestamp}.pdf"
+        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf_filename)
+        
+        # Use SATO thermal optimization with one-page-per-row approach
+        success = generator.generate_bulk_labels_grouped(
+            wire_id_quantities,
+            use_full_page=True,
+            page_margin_top_inches=0.0,  # No top margin for thermal
+            page_margin_left_inches=0.0,  # No left margin for thermal
+            labels_per_row=labels_per_row,  # Usually 1 for thermal optimization
+            label_spacing_horizontal_inches=6.1,  # SATO M-84Pro spacing
+            label_spacing_vertical_inches=1.8,  # Thermal optimized vertical spacing
+            lines_per_label=lines_per_label,
+            sato_optimized=True,  # Enable SATO thermal optimization
+            output_filename=pdf_path  # Save directly to file
+        )
+        
+        if success:
+            # Handle different actions
+            if action == 'print' and PRINTER_AVAILABLE:
+                # Print directly
+                settings = get_label_settings()
+                printer_name = settings.get('selected_printer')
+                if printer_name:
+                    print_success = windows_printer.print_pdf(pdf_path, printer_name, copies)
+                    if print_success:
+                        flash(f'Labels printed successfully to {printer_name}', 'success')
+                    else:
+                        flash('Printing failed - PDF generated for download', 'warning')
+                else:
+                    flash('No printer selected - PDF generated for download', 'warning')
+            
+            # Always provide download link
+            pdf_url = f'/uploads/{pdf_filename}'
+            flash(f'Labels generated successfully! {len(wire_id_quantities)} unique wire IDs processed.', 'success')
+            
+            return render_template('index.html', 
+                                 pdf_url=pdf_url,
+                                 pdf_filename=pdf_filename,
+                                 label_count=sum(qty for _, qty in wire_id_quantities),
+                                 generation_stats={
+                                     'total_labels': sum(qty for _, qty in wire_id_quantities),
+                                     'unique_ids': len(wire_id_quantities),
+                                     'method': print_method,
+                                     'thermal_optimized': thermal_optimized
+                                 })
+        else:
+            flash('Failed to generate labels', 'error')
+            return redirect(url_for('index'))
+            
+    except Exception as e:
+        flash(f'Error generating labels: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
+def parse_label_data(label_data, data_format):
+    """Parse manual label data based on format"""
+    wire_id_quantities = []
+    
+    for line in label_data.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        
+        if data_format == 'simple':
+            wire_id_quantities.append((line, 1))
+        elif data_format == 'quantity':
+            parts = line.split(',', 1)
+            wire_id = parts[0].strip()
+            quantity = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip().isdigit() else 1
+            wire_id_quantities.append((wire_id, quantity))
+        elif data_format == 'detailed':
+            parts = line.split(',', 2)
+            wire_id = parts[0].strip()
+            quantity = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip().isdigit() else 1
+            description = parts[2].strip() if len(parts) > 2 else ''
+            # For now, just use wire_id (could extend to include description)
+            wire_id_quantities.append((wire_id, quantity))
+    
+    return wire_id_quantities
+
+def parse_csv_data(csv_file, csv_column, csv_qty_column, csv_desc_column, data_format):
+    """Parse CSV file data"""
+    import csv
+    wire_id_quantities = []
+    
+    try:
+        # Read CSV file
+        csv_content = csv_file.read().decode('utf-8')
+        csv_reader = csv.reader(csv_content.splitlines())
+        
+        headers = None
+        for row_idx, row in enumerate(csv_reader):
+            if row_idx == 0:
+                headers = row
+                continue
+            
+            if not row:
+                continue
+            
+            # Get wire ID
+            wire_id_col = get_column_index(csv_column, headers)
+            if wire_id_col >= len(row):
+                continue
+            wire_id = row[wire_id_col].strip()
+            
+            # Get quantity if specified
+            quantity = 1
+            if csv_qty_column:
+                qty_col = get_column_index(csv_qty_column, headers)
+                if qty_col < len(row) and row[qty_col].strip().isdigit():
+                    quantity = int(row[qty_col].strip())
+            
+            if wire_id:
+                wire_id_quantities.append((wire_id, quantity))
+                
+    except Exception as e:
+        print(f"Error parsing CSV: {e}")
+    
+    return wire_id_quantities
+
+def get_column_index(column_spec, headers):
+    """Get column index from specification (number or header name)"""
+    if column_spec.isdigit():
+        return int(column_spec)
+    else:
+        try:
+            return headers.index(column_spec)
+        except ValueError:
+            return 0
+
+def generate_batch_data(prefix, start, count):
+    """Generate batch wire ID data"""
+    wire_id_quantities = []
+    
+    for i in range(count):
+        wire_id = f"{prefix}-{str(start + i).zfill(3)}"
+        wire_id_quantities.append((wire_id, 1))
+    
+    return wire_id_quantities
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    """Serve uploaded files"""
+    return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+
+@app.route('/print_pdf', methods=['POST'])
+def print_pdf():
+    """Print a PDF file to the selected printer"""
+    if not PRINTER_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Printing not available'})
+    
+    try:
+        data = request.get_json()
+        pdf_url = data.get('pdf_url', '')
+        
+        if not pdf_url:
+            return jsonify({'success': False, 'error': 'No PDF URL provided'})
+        
+        # Extract filename from URL
+        filename = pdf_url.split('/')[-1]
+        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        if not os.path.exists(pdf_path):
+            return jsonify({'success': False, 'error': 'PDF file not found'})
+        
+        settings = get_label_settings()
+        printer_name = settings.get('selected_printer')
+        
+        if not printer_name:
+            return jsonify({'success': False, 'error': 'No printer selected'})
+        
+        success = windows_printer.print_pdf(pdf_path, printer_name, 1)
+        
+        if success:
+            return jsonify({'success': True, 'message': f'PDF sent to {printer_name}'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to send PDF to printer'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 def select_profile():
     """Select a label profile"""
     try:
@@ -212,12 +487,17 @@ def settings_login():
     
     return render_template('settings_login.html')
 
-@app.route('/settings')
+@app.route('/settings', methods=['GET', 'POST'])
 def settings():
     """Settings page for label configuration"""
     # Check authentication
     if not is_authenticated():
         return redirect(url_for('settings_login', **request.args))
+    
+    if request.method == 'POST':
+        return handle_settings_update()
+    
+    # GET request - show settings page
     # Save current wire IDs to session before going to settings
     wire_ids = request.args.get('wire_ids', '')
     if wire_ids:
@@ -236,10 +516,221 @@ def settings():
     
     current_profile = session.get('current_profile', 'Wire Labels')
     
+    # Get printer information
+    printer_info = {}
+    if PRINTER_AVAILABLE:
+        printer_info = {
+            'available': True,
+            'printers': windows_printer.get_printer_list(),
+            'default': windows_printer.get_default_printer()
+        }
+    else:
+        printer_info = {'available': False}
+    
     return render_template('settings.html', 
                          settings=current_settings,
                          profiles=all_profiles,
-                         current_profile=current_profile)
+                         current_profile=current_profile,
+                         printer_info=printer_info)
+
+def handle_settings_update():
+    """Handle settings form submission"""
+    try:
+        action = request.form.get('action', '')
+        
+        if action == 'update_printer':
+            return handle_printer_update()
+        elif action == 'update_label_specs':
+            return handle_label_specs_update()
+        elif action == 'update_font_settings':
+            return handle_font_settings_update()
+        elif action == 'update_advanced_settings':
+            return handle_advanced_settings_update()
+        elif action == 'update_settings':
+            return handle_complete_settings_update()
+        else:
+            flash('Unknown action', 'error')
+            return redirect(url_for('settings'))
+            
+    except Exception as e:
+        flash(f'Error updating settings: {str(e)}', 'error')
+        return redirect(url_for('settings'))
+
+def handle_printer_update():
+    """Handle printer configuration update"""
+    try:
+        printer_name = request.form.get('printer_name', '')
+        printer_type = request.form.get('printer_type', 'auto')
+        
+        if printer_name:
+            session['selected_printer'] = printer_name
+            session['printer_type'] = printer_type
+            flash(f'Printer updated to: {printer_name}', 'success')
+        else:
+            flash('Please select a printer', 'error')
+            
+    except Exception as e:
+        flash(f'Error updating printer: {str(e)}', 'error')
+    
+    return redirect(url_for('settings'))
+
+def handle_label_specs_update():
+    """Handle label specifications update"""
+    try:
+        session['width_inches'] = float(request.form.get('label_width', 5.91))
+        session['label_printable_height_inches'] = float(request.form.get('label_height', 3.94))
+        session['label_spacing_horizontal_inches'] = float(request.form.get('horizontal_spacing', 6.10))
+        session['label_spacing_vertical_inches'] = float(request.form.get('vertical_spacing', 1.8))
+        session['page_margin_top_inches'] = float(request.form.get('margin_top', 0.0))
+        session['page_margin_left_inches'] = float(request.form.get('margin_left', 0.0))
+        
+        flash('Label specifications updated successfully', 'success')
+        
+    except ValueError as e:
+        flash('Invalid numeric value in label specifications', 'error')
+    except Exception as e:
+        flash(f'Error updating label specifications: {str(e)}', 'error')
+    
+    return redirect(url_for('settings'))
+
+def handle_font_settings_update():
+    """Handle font settings update"""
+    try:
+        session['label_font_name'] = request.form.get('font_name', 'Arial')
+        session['label_font_size'] = int(request.form.get('font_size', 8))
+        session['label_font_bold'] = request.form.get('font_bold', 'false') == 'true'
+        session['lines_per_label'] = int(request.form.get('lines_per_label', 4))
+        
+        flash('Font settings updated successfully', 'success')
+        
+    except ValueError as e:
+        flash('Invalid numeric value in font settings', 'error')
+    except Exception as e:
+        flash(f'Error updating font settings: {str(e)}', 'error')
+    
+    return redirect(url_for('settings'))
+
+def handle_advanced_settings_update():
+    """Handle advanced settings update"""
+    try:
+        session['labels_per_row'] = int(request.form.get('labels_per_row', 1))
+        session['label_auto_size_font'] = request.form.get('auto_size_font', 'false') == 'true'
+        session['show_border'] = request.form.get('show_border', 'false') == 'true'
+        session['thermal_optimized'] = request.form.get('thermal_optimization', 'true') == 'true'
+        
+        flash('Advanced settings updated successfully', 'success')
+        
+    except ValueError as e:
+        flash('Invalid numeric value in advanced settings', 'error')
+    except Exception as e:
+        flash(f'Error updating advanced settings: {str(e)}', 'error')
+    
+    return redirect(url_for('settings'))
+
+def handle_complete_settings_update():
+    """Handle complete settings form submission from the unified settings form"""
+    try:
+        # Update all settings from the form
+        session['label_width_inches'] = float(request.form.get('label_width', 6.0))
+        session['label_printable_height_inches'] = float(request.form.get('label_height', 4.0))
+        session['page_margin_top_inches'] = float(request.form.get('margin_top', 0.5))
+        session['page_margin_left_inches'] = float(request.form.get('margin_left', 0.5))
+        session['lines_per_label'] = int(request.form.get('lines_per_label', 1))
+        session['labels_per_row'] = int(request.form.get('labels_per_row', 1))
+        session['label_spacing_horizontal_inches'] = float(request.form.get('horizontal_spacing', 4.0))
+        session['label_spacing_vertical_inches'] = float(request.form.get('vertical_spacing', 1.8))
+        session['label_font_name'] = request.form.get('font_name', 'Arial')
+        session['label_font_size'] = int(request.form.get('font_size', 8))
+        session['label_font_bold'] = 'font_bold' in request.form
+        
+        flash('Settings updated successfully', 'success')
+        
+    except ValueError as e:
+        flash('Invalid numeric value in settings', 'error')
+    except Exception as e:
+        flash(f'Error updating settings: {str(e)}', 'error')
+    
+    return redirect(url_for('settings'))
+
+@app.route('/load_profile', methods=['POST'])
+def load_profile_route():
+    """Load a profile and return its settings"""
+    if not is_authenticated():
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
+    try:
+        data = request.get_json()
+        profile_name = data.get('profile_name', '')
+        
+        if not profile_name:
+            return jsonify({'success': False, 'error': 'Profile name required'})
+        
+        # Load profile from saved profiles
+        profiles = get_saved_profiles()
+        if profile_name not in profiles:
+            return jsonify({'success': False, 'error': f'Profile "{profile_name}" not found'})
+        
+        profile_data = profiles[profile_name]
+        
+        # Apply profile to session
+        session.update({
+            'label_width_inches': profile_data.get('width_inches', 6.0),
+            'label_printable_height_inches': profile_data.get('label_printable_height_inches', 4.0),
+            'page_margin_top_inches': profile_data.get('page_margin_top_inches', 0.5),
+            'page_margin_left_inches': profile_data.get('page_margin_left_inches', 0.5),
+            'label_spacing_horizontal_inches': profile_data.get('label_spacing_horizontal_inches', 4.0),
+            'label_spacing_vertical_inches': profile_data.get('label_spacing_vertical_inches', 1.8),
+            'label_font_name': profile_data.get('font_name', 'Arial'),
+            'label_font_size': profile_data.get('font_size', 8),
+            'label_font_bold': profile_data.get('font_bold', False),
+            'current_profile': profile_name
+        })
+        
+        return jsonify({'success': True, 'settings': profile_data})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/save_profile', methods=['POST'])
+def save_profile_route():
+    """Save current settings as a new profile"""
+    if not is_authenticated():
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
+    try:
+        data = request.get_json()
+        profile_name = data.get('profile_name', '')
+        settings = data.get('settings', {})
+        
+        if not profile_name:
+            return jsonify({'success': False, 'error': 'Profile name required'})
+        
+        if not settings:
+            return jsonify({'success': False, 'error': 'Settings data required'})
+        
+        # Save profile using existing function
+        success = save_profile(profile_name, settings)
+        
+        if success:
+            # Also update session to use this profile
+            session.update({
+                'label_width_inches': settings.get('width_inches', 6.0),
+                'label_printable_height_inches': settings.get('label_printable_height_inches', 4.0),
+                'page_margin_top_inches': settings.get('page_margin_top_inches', 0.5),
+                'page_margin_left_inches': settings.get('page_margin_left_inches', 0.5),
+                'label_spacing_horizontal_inches': settings.get('label_spacing_horizontal_inches', 4.0),
+                'label_spacing_vertical_inches': settings.get('label_spacing_vertical_inches', 1.8),
+                'label_font_name': settings.get('font_name', 'Arial'),
+                'label_font_size': settings.get('font_size', 8),
+                'label_font_bold': settings.get('font_bold', False),
+                'current_profile': profile_name
+            })
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to save profile to file'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/save_temp_wire_ids', methods=['POST'])
 def save_temp_wire_ids():
@@ -299,39 +790,37 @@ def print_labels():
             flash('Please select a printer in settings before printing', 'error')
             return redirect(url_for('settings'))
         
-        # Create label generator with thermal transfer printer optimization
-        # SATO M-84Pro thermal printer - always use small margins for optimal positioning
-        margin_top = 2.0 / 25.4     # 2mm to inches
-        margin_bottom = 2.0 / 25.4  # 2mm to inches  
-        margin_left = 3.0 / 25.4    # 3mm to inches
-        margin_right = 3.0 / 25.4   # 3mm to inches
-        
+        # Create label generator with SATO M-84Pro thermal optimization
         generator = WireLabelGenerator(
             width_inches=settings['width_inches'],
             printable_height_inches=settings['label_printable_height_inches'],
-            margin_top_inches=margin_top,
-            margin_right_inches=margin_right,
-            margin_bottom_inches=margin_bottom,
-            margin_left_inches=margin_left,
+            margin_top_inches=0.0,  # Zero margins for thermal precision
+            margin_right_inches=0.0,
+            margin_bottom_inches=0.0,
+            margin_left_inches=0.0,
             font_name=settings['font_name'],
             font_size=settings['font_size'],
             font_bold=settings['font_bold'],
-            auto_size_font=settings['auto_size_font'],
+            auto_size_font=False,  # Disabled for thermal precision
             thermal_optimized=True,  # Always enabled for SATO
             show_border=settings['show_border']
         )
         
-        # SATO M-84Pro - use bulk generation for sequential labeling
-        print(f"DEBUG: Using vertical spacing: {settings['label_spacing_vertical_inches']} inches")
+        # SATO M-84Pro advanced thermal generation with one-page-per-row
+        print(f"DEBUG: Using SATO advanced thermal optimization")
+        print(f"DEBUG: Labels per row: {settings['labels_per_row']}")
+        print(f"DEBUG: Vertical spacing: {settings['label_spacing_vertical_inches']} inches")
+        
         pdf_buffer = generator.generate_bulk_labels_grouped(
             wire_id_quantities,
-            page_margin_top_inches=settings['page_margin_top_inches'],
-            page_margin_left_inches=settings['page_margin_left_inches'],
+            use_full_page=True,
+            page_margin_top_inches=0.0,  # Zero for thermal precision
+            page_margin_left_inches=0.0,  # Zero for thermal precision
             labels_per_row=settings['labels_per_row'],
             label_spacing_horizontal_inches=settings['label_spacing_horizontal_inches'],
             label_spacing_vertical_inches=settings['label_spacing_vertical_inches'],
             lines_per_label=settings['lines_per_label'],
-            sato_optimized=True
+            sato_optimized=True  # Enable advanced SATO optimization
         )
         
         # Print the bulk PDF with all labels
@@ -354,6 +843,384 @@ def print_labels():
     except Exception as e:
         flash(f'Error printing labels: {str(e)}', 'error')
         return redirect(url_for('index'))
+
+@app.route('/refresh_printers', methods=['POST'])
+def refresh_printers():
+    """Refresh printer list"""
+    try:
+        if PRINTER_AVAILABLE:
+            printers = windows_printer.get_printer_list()
+            return jsonify({'success': True, 'printers': printers})
+        else:
+            return jsonify({'success': False, 'error': 'Printer support not available'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/test_print', methods=['POST'])
+def test_print_route():
+    """Send a test print to the selected printer"""
+    try:
+        if not PRINTER_AVAILABLE:
+            return jsonify({'success': False, 'error': 'Printing not available'})
+        
+        data = request.get_json()
+        printer = data.get('printer', '')
+        
+        if not printer:
+            settings = get_label_settings()
+            printer = settings.get('selected_printer', '')
+        
+        if not printer:
+            return jsonify({'success': False, 'error': 'No printer selected'})
+        
+        # Create a simple test label
+        generator = WireLabelGenerator(
+            width_inches=5.91,
+            printable_height_inches=3.94,
+            margin_top_inches=0.0,
+            margin_left_inches=0.0,
+            margin_right_inches=0.0,
+            margin_bottom_inches=0.0,
+            font_name='Arial',
+            font_size=8,
+            font_bold=True,
+            auto_size_font=False,
+            thermal_optimized=True,
+            show_border=False
+        )
+        
+        # Generate test label
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pdf_filename = f"test_label_{timestamp}.pdf"
+        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf_filename)
+        
+        test_data = [('TEST-001', 1)]
+        success = generator.generate_bulk_labels_grouped(
+            test_data,
+            use_full_page=True,
+            page_margin_top_inches=0.0,
+            page_margin_left_inches=0.0,
+            label_spacing_vertical_inches=1.8,
+            label_spacing_horizontal_inches=6.1,
+            lines_per_label=4,
+            output_filename=pdf_path
+        )
+        
+        if success:
+            print_success = windows_printer.print_pdf(pdf_path, printer, 1)
+            if print_success:
+                return jsonify({'success': True, 'message': f'Test label sent to {printer}'})
+            else:
+                return jsonify({'success': False, 'error': 'Failed to print test label'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to generate test label'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/reset_settings', methods=['POST'])
+def reset_settings():
+    """Reset all settings to defaults"""
+    try:
+        # Clear all label-related session variables
+        keys_to_clear = [k for k in session.keys() if k.startswith('label_') or k in ['width_inches', 'page_margin_top_inches', 'page_margin_left_inches', 'selected_printer', 'current_profile', 'thermal_optimized']]
+        for key in keys_to_clear:
+            session.pop(key, None)
+        
+        return jsonify({'success': True, 'message': 'Settings reset to defaults'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/detect_printer_type', methods=['POST'])
+def detect_printer_type():
+    """Auto-detect printer type"""
+    try:
+        data = request.get_json()
+        printer = data.get('printer', '')
+        
+        if not printer:
+            return jsonify({'success': False, 'error': 'No printer specified'})
+        
+        # Simple heuristic - check printer name for thermal printer keywords
+        printer_upper = printer.upper()
+        if any(keyword in printer_upper for keyword in ['SATO', 'THERMAL', 'ZEBRA', 'DATAMAX']):
+            printer_type = 'thermal'
+        else:
+            printer_type = 'office'
+        
+        return jsonify({'success': True, 'type': printer_type})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/export_settings', methods=['POST'])
+def export_settings():
+    """Export current settings as JSON"""
+    try:
+        settings = get_label_settings()
+        
+        # Create export data
+        export_data = {
+            'export_date': datetime.now().isoformat(),
+            'version': '2.0',
+            'settings': settings,
+            'profiles': {
+                'current_profile': session.get('current_profile', 'Wire Labels'),
+                'default_profiles': get_default_profiles(),
+                'saved_profiles': get_saved_profiles()
+            }
+        }
+        
+        # Create JSON response
+        json_data = json.dumps(export_data, indent=2)
+        
+        # Create response
+        response = send_file(
+            io.BytesIO(json_data.encode('utf-8')),
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=f'wire_label_settings_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        )
+        
+        return response
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/import_settings', methods=['POST'])
+def import_settings():
+    """Import settings from JSON file"""
+    try:
+        if 'settings_file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'})
+        
+        file = request.files['settings_file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'})
+        
+        # Read and parse JSON
+        content = file.read().decode('utf-8')
+        import_data = json.loads(content)
+        
+        # Validate structure
+        if 'settings' not in import_data:
+            return jsonify({'success': False, 'error': 'Invalid settings file format'})
+        
+        # Import settings
+        settings = import_data['settings']
+        for key, value in settings.items():
+            if key.startswith('label_') or key in ['width_inches', 'page_margin_top_inches', 'page_margin_left_inches', 'selected_printer', 'thermal_optimized']:
+                session[key] = value
+        
+        # Import current profile if available
+        if 'profiles' in import_data and 'current_profile' in import_data['profiles']:
+            session['current_profile'] = import_data['profiles']['current_profile']
+        
+        return jsonify({'success': True, 'message': 'Settings imported successfully'})
+        
+    except json.JSONDecodeError:
+        return jsonify({'success': False, 'error': 'Invalid JSON file'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/import_legacy', methods=['POST'])
+def import_legacy():
+    """Import legacy .lbl files with alternating wireID/qty format"""
+    try:
+        if 'legacy_file' not in request.files:
+            flash('No file provided', 'error')
+            return redirect(url_for('index'))
+        
+        file = request.files['legacy_file']
+        if file.filename == '':
+            flash('No file selected', 'error')
+            return redirect(url_for('index'))
+        
+        # Read file content
+        content = file.read().decode('utf-8', errors='ignore')
+        lines = content.strip().split('\n')
+        
+        # Parse legacy format: wireID, qty, wireID, qty, ...
+        wire_id_quantities = []
+        i = 0
+        
+        while i < len(lines):
+            if i + 1 >= len(lines):
+                break  # Need both wireID and qty
+            
+            wire_id = lines[i].strip().upper()
+            qty_line = lines[i + 1].strip()
+            
+            # Skip empty lines
+            if not wire_id or not qty_line:
+                i += 2
+                continue
+            
+            # Parse quantity
+            try:
+                quantity = int(qty_line)
+                if quantity < 1:
+                    quantity = 1
+            except ValueError:
+                # If qty line is not a number, treat it as another wire ID
+                # and assume qty of 1 for the previous wire ID
+                quantity = 1
+                i += 1  # Only advance by 1 to reprocess this line as wire ID
+            else:
+                i += 2  # Advance by 2 for normal wire ID + qty pair
+            
+            if wire_id:
+                wire_id_quantities.append((wire_id, quantity))
+        
+        if not wire_id_quantities:
+            flash('No valid wire IDs found in legacy file', 'error')
+            return redirect(url_for('index'))
+        
+        # Convert to session format and store
+        wire_ids_text = '\n'.join([f"{wire_id},{qty}" for wire_id, qty in wire_id_quantities])
+        session['temp_wire_ids'] = wire_ids_text
+        
+        # Count totals
+        total_unique = len(wire_id_quantities)
+        total_labels = sum(qty for _, qty in wire_id_quantities)
+        
+        flash(f'Successfully imported {total_unique} wire IDs ({total_labels} total labels) from legacy file', 'success')
+        return redirect(url_for('index'))
+        
+    except Exception as e:
+        flash(f'Error importing legacy file: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
+@app.route('/import_csv', methods=['POST'])
+def import_csv():
+    """Import CSV files with wire IDs and quantities"""
+    try:
+        if 'csv_file' not in request.files:
+            flash('No file provided', 'error')
+            return redirect(url_for('index'))
+        
+        file = request.files['csv_file']
+        if file.filename == '':
+            flash('No file selected', 'error')
+            return redirect(url_for('index'))
+        
+        # Read CSV content
+        content = file.read().decode('utf-8', errors='ignore')
+        lines = content.strip().split('\n')
+        
+        wire_id_quantities = []
+        
+        for line_num, line in enumerate(lines, 1):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Parse CSV line (expecting: wireID,quantity)
+            parts = line.split(',')
+            if len(parts) >= 1:
+                wire_id = parts[0].strip().upper()
+                
+                # Get quantity if provided, default to 1
+                if len(parts) >= 2:
+                    try:
+                        quantity = int(parts[1].strip())
+                        if quantity < 1:
+                            quantity = 1
+                    except ValueError:
+                        quantity = 1
+                else:
+                    quantity = 1
+                
+                if wire_id:
+                    wire_id_quantities.append((wire_id, quantity))
+        
+        if not wire_id_quantities:
+            flash('No valid wire IDs found in CSV file', 'error')
+            return redirect(url_for('index'))
+        
+        # Convert to session format and store
+        wire_ids_text = '\n'.join([f"{wire_id},{qty}" for wire_id, qty in wire_id_quantities])
+        session['temp_wire_ids'] = wire_ids_text
+        
+        # Count totals
+        total_unique = len(wire_id_quantities)
+        total_labels = sum(qty for _, qty in wire_id_quantities)
+        
+        flash(f'Successfully imported {total_unique} wire IDs ({total_labels} total labels) from CSV file', 'success')
+        return redirect(url_for('index'))
+        
+    except Exception as e:
+        flash(f'Error importing CSV file: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
+@app.route('/create_label', methods=['POST'])
+def create_label():
+    """Export wire IDs to CSV file for download"""
+    try:
+        # Get wire IDs from form
+        wire_ids_text = request.form.get('wire_ids', '').strip()
+        
+        if not wire_ids_text:
+            flash('No wire IDs to export', 'error')
+            return redirect(url_for('index'))
+        
+        # Parse wire IDs
+        wire_id_quantities = []
+        for line in wire_ids_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            
+            if ',' in line:
+                parts = line.split(',', 1)
+                wire_id = parts[0].strip()
+                try:
+                    quantity = int(parts[1].strip())
+                except (ValueError, IndexError):
+                    quantity = 1
+            else:
+                wire_id = line.strip()
+                quantity = 1
+            
+            if wire_id:
+                wire_id_quantities.append((wire_id, quantity))
+        
+        if not wire_id_quantities:
+            flash('No valid wire IDs found', 'error')
+            return redirect(url_for('index'))
+        
+        # Generate CSV content
+        csv_lines = ['Wire ID,Quantity']  # Header
+        for wire_id, quantity in wire_id_quantities:
+            csv_lines.append(f'{wire_id},{quantity}')
+        
+        csv_content = '\n'.join(csv_lines)
+        
+        # Create response with CSV file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"wire_labels_{timestamp}.csv"
+        
+        response = send_file(
+            io.BytesIO(csv_content.encode('utf-8')),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+        # Clear temporary wire IDs from session
+        session.pop('temp_wire_ids', None)
+        
+        return response
+        
+    except Exception as e:
+        flash(f'Error creating CSV export: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
+@app.route('/logout', methods=['GET', 'POST'])
+def logout():
+    """Logout from settings"""
+    session.pop('settings_authenticated', None)
+    flash('Logged out successfully', 'success')
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
