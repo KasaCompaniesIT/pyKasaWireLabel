@@ -127,18 +127,18 @@
             <textarea id="wire_ids" name="wire_ids" style="display: none;"></textarea>
             
             <!-- Action Buttons -->
-            <div class="button-group">
-                {% if printer_info.available and settings.selected_printer %}
-                <button type="button" id="printBtn" class="btn btn-success">
-                    🖨️ Print to {{ settings.selected_printer[:15] }}{{ '...' if settings.selected_printer|length > 15 else '' }}
-                </button>
-                {% endif %}
+            <div class="button-group">                
                 {# <button type="button" id="generateBtn" class="btn btn-primary">
                     📄 Export PDF
                 </button> #}
                 <button type="button" id="exportBtn" class="btn btn-secondary">
                     📊 Export CSV
                 </button>
+                {% if printer_info.available and settings.selected_printer %}
+                <button type="button" id="printBtn" class="btn btn-success">
+                    🖨️ Print to <span style="font-weight: bold;">{{ settings.selected_printer[:30] }}{{ '...' if settings.selected_printer|length > 30 else '' }}</span>
+                </button>
+                {% endif %}
             </div>
         </form>
         
