@@ -35,17 +35,23 @@
                             </option>
                         {% endfor %}
                     </select>
+                    <button type="button" class="btn-primary" onclick="loadSelectedProfile()">Load Profile</button>
                 </div>
                 <div class="form-group">
                     <label for="profile_name">Save New Profile:</label>
                     <input type="text" name="profile_name" id="profile_name" placeholder="Enter new profile name">
+                    <button type="button" class="btn-success" onclick="saveProfile()">Save Profile</button>
                 </div>
             </div>
             
-            <div class="button-group">
-                <button type="button" class="btn-primary" onclick="loadSelectedProfile()">Load Profile</button>
-                <button type="button" class="btn-success" onclick="saveProfile()">Save Profile</button>
-            </div>
+            {# <div class="form-row">
+                <div class="form-group">
+                    <button type="button" class="btn-primary" onclick="loadSelectedProfile()">Load Profile</button>
+                </div>
+                <div class="form-group">
+                    <button type="button" class="btn-success" onclick="saveProfile()">Save Profile</button>
+                </div>
+            </div> #}
         </div>
         
         <!-- Label Settings -->
