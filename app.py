@@ -43,15 +43,49 @@ def load_profiles_from_file():
 def save_profiles_to_file(profiles):
     """Save profiles to JSON file"""
     try:
+        print(f"DEBUG: Attempting to save {len(profiles)} profiles to {PROFILES_FILE}")
+        print(f"DEBUG: Profile names: {list(profiles.keys())}")
+        
         with open(PROFILES_FILE, 'w') as f:
             json.dump(profiles, f, indent=2)
+        
+        print(f"DEBUG: Successfully wrote profiles to file")
         return True
-    except IOError:
+    except IOError as e:
+        print(f"DEBUG: IOError saving profiles: {e}")
+        return False
+    except Exception as e:
+        print(f"DEBUG: Unexpected error saving profiles: {e}")
         return False
 
 def is_authenticated():
     """Check if user is authenticated for settings access"""
     return session.get('settings_authenticated', False)
+
+def get_pure_label_settings(profile_name):
+    """Get pure label settings from profile without session overrides"""
+    profiles = load_profiles_from_file()
+    profile = profiles.get(profile_name, {})
+    
+    # Return pure profile settings without session overrides
+    settings_dict = {
+        'width_inches': profile.get('width_inches', 0.875),
+        'font_name': profile.get('font_name', 'Arial'),
+        'font_size': profile.get('font_size', 11),
+        'font_bold': profile.get('font_bold', True),
+        'auto_size_font': profile.get('auto_size_font', False),
+        'lines_per_label': profile.get('lines_per_label', 3),
+        'labels_per_row': profile.get('labels_per_row', 4),
+        'page_margin_top_inches': profile.get('page_margin_top_inches', 0.0),
+        'page_margin_left_inches': profile.get('page_margin_left_inches', 0.0),
+        'label_printable_height_inches': profile.get('label_printable_height_inches', 0.4),
+        'label_spacing_horizontal_inches': profile.get('label_spacing_horizontal_inches', 1.0),
+        'label_spacing_vertical_inches': profile.get('label_spacing_vertical_inches', 1.8),
+        'show_border': profile.get('show_border', False),
+        'selected_printer': 'PTR3',  # Always SATO
+    }
+    
+    return settings_dict
 
 def get_label_settings():
     """Get label settings from the selected profile"""
@@ -104,9 +138,22 @@ def get_saved_profiles():
 
 def save_profile(name, profile_data):
     """Save a label profile to file"""
+    # Load existing profiles first
     profiles = load_profiles_from_file()
+    print(f"DEBUG: Loaded existing profiles: {list(profiles.keys())}")
+    
+    # Add the new profile
     profiles[name] = profile_data
+    print(f"DEBUG: Saving profile '{name}' with data: {profile_data}")
+    print(f"DEBUG: All profiles to save: {list(profiles.keys())}")
+    
+    # Save back to file
     success = save_profiles_to_file(profiles)
+    if success:
+        print(f"DEBUG: Successfully saved profile '{name}'")
+    else:
+        print(f"DEBUG: Failed to save profile '{name}'")
+    
     return success
 
 def delete_profile(name):
@@ -549,16 +596,21 @@ def settings():
     
     current_settings = get_label_settings()
     
-    # Get all available profiles
+    # Get all available profiles (pure profile data, not session-modified)
     default_profiles = get_default_profiles()
     saved_profiles = get_saved_profiles()
     
-    # Combine all profiles for template
+    # Combine all profiles for template (these should be the pure profile values)
     all_profiles = {}
     all_profiles.update(default_profiles)
     all_profiles.update(saved_profiles)
     
     current_profile = session.get('current_profile', 'Wire Labels')
+    
+    # For the settings page, use pure profile data initially to avoid showing session-modified values
+    # This ensures the form shows the actual profile values, not accidentally modified ones
+    if current_profile in all_profiles:
+        current_settings = get_pure_label_settings(current_profile)
     
     # Get printer information
     printer_info = {}
@@ -713,10 +765,9 @@ def load_profile_route():
         profiles = get_saved_profiles()
         if profile_name not in profiles:
             return jsonify({'success': False, 'error': f'Profile "{profile_name}" not found'})
-        
-        profile_data = profiles[profile_name]
-        
-        # Apply profile to session
+
+        # Get pure profile data (not session-modified)
+        profile_data = get_pure_label_settings(profile_name)        # Apply profile to session
         session.update({
             'label_width_inches': profile_data.get('width_inches', 6.0),
             'label_printable_height_inches': profile_data.get('label_printable_height_inches', 4.0),
@@ -727,7 +778,12 @@ def load_profile_route():
             'label_font_name': profile_data.get('font_name', 'Arial'),
             'label_font_size': profile_data.get('font_size', 8),
             'label_font_bold': profile_data.get('font_bold', False),
-            'current_profile': profile_name
+            'label_auto_size_font': profile_data.get('auto_size_font', False),
+            'lines_per_label': profile_data.get('lines_per_label', 3),
+            'labels_per_row': profile_data.get('labels_per_row', 4),
+            'show_border': profile_data.get('show_border', False),
+            'current_profile': profile_name,
+            'selected_profile': profile_name
         })
         
         return jsonify({'success': True, 'settings': profile_data})

@@ -126,14 +126,19 @@ class WireLabelGenerator:
     def calculate_optimal_font_size(self, pdf, text, available_width_mm, available_height_mm, base_font_size, lines_per_label=1):
         """Calculate the optimal font size to fit text within available space"""
         if not self.auto_size_font:
+            print(f"DEBUG: Autosize disabled, using base font size {base_font_size}")
             return base_font_size
+            
+        print(f"DEBUG: Calculating optimal font size for text '{text}'")
+        print(f"DEBUG: Available space: {available_width_mm:.1f}mm x {available_height_mm:.1f}mm")
+        print(f"DEBUG: Base font size: {base_font_size}, Lines: {lines_per_label}")
             
         # Set font style
         font_style = 'B' if self.font_bold else ''
         
         # Start with the base font size and work down if needed
         test_size = base_font_size
-        min_size = 6  # SATO-optimized minimum size
+        min_size = 4  # More aggressive minimum size for very long text
         max_size = 12 # SATO-optimized maximum size
         
         while test_size >= min_size:
@@ -147,12 +152,17 @@ class WireLabelGenerator:
             line_height = test_size * 0.35  # Approximate line height in mm
             total_text_height = line_height * lines_per_label
             
+            print(f"DEBUG: Test size {test_size}: text_width={text_width:.1f}mm, line_height={line_height:.1f}mm, total_height={total_text_height:.1f}mm")
+            
             if text_width <= available_width_mm and total_text_height <= available_height_mm:
+                print(f"DEBUG: Font size {test_size} fits! Final size selected.")
                 return test_size
                 
             test_size -= 1
             
-        return max(min_size, test_size)
+        final_size = max(min_size, test_size)
+        print(f"DEBUG: Reached minimum, using font size {final_size}")
+        return final_size
     
     def generate_label(self, label_data, lines_per_label=3, sato_optimized=True):
         """Generate a SATO M-84Pro optimized wire label with repeated text"""
@@ -185,8 +195,15 @@ class WireLabelGenerator:
             # Use only the Wire ID for repeated text
             text_to_repeat = label_data['wire_id']
             
-            # Determine font size - always use exact font size for SATO
-            font_size = self.font_size
+            # Determine optimal font size using autosize if enabled
+            if self.auto_size_font:
+                font_size = self.calculate_optimal_font_size(
+                    pdf, text_to_repeat, available_width, available_height, self.font_size, lines_per_label
+                )
+                print(f"DEBUG: Auto-sized font from {self.font_size} to {font_size} for text '{text_to_repeat}'")
+            else:
+                font_size = self.font_size
+                print(f"DEBUG: Using fixed font size {font_size} (autosize disabled)")
                 
             # Set font with style
             font_style = 'B' if self.font_bold else ''
@@ -402,12 +419,24 @@ class WireLabelGenerator:
             available_height = self.label_height_mm - self.margin_top_mm - self.margin_bottom_mm
             line_spacing = available_height / max(lines_per_label, 1) if lines_per_label > 1 else available_height * 0.8
             
-            # Set font with actual settings
+            # Calculate available width for text (excluding margins)
+            available_width = self.label_width_mm - self.margin_left_mm - self.margin_right_mm
+            
+            # Determine optimal font size if autosize is enabled
+            if self.auto_size_font:
+                font_size = self.calculate_optimal_font_size(
+                    pdf, wire_id, available_width, available_height, self.font_size, lines_per_label
+                )
+                print(f"DEBUG: Auto-sized font from {self.font_size} to {font_size} for text '{wire_id}'")
+            else:
+                font_size = self.font_size
+            
+            # Set font with calculated or original size
             font_style = 'B' if self.font_bold else ''
-            setup_pdf_font(pdf, self.font_name, font_style, self.font_size)
+            setup_pdf_font(pdf, self.font_name, font_style, font_size)
             
             print(f"DEBUG: Drawing SATO label '{wire_id}' at ({start_x:.1f}, {start_y:.1f}) with {lines_per_label} lines")
-            print(f"DEBUG: Available height: {available_height:.1f}mm, line spacing: {line_spacing:.1f}mm")
+            print(f"DEBUG: Available height: {available_height:.1f}mm, line spacing: {line_spacing:.1f}mm, font size: {font_size}")
             
             # Draw the specified number of lines of the same wire ID
             for i in range(lines_per_label):
