@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, send_file, flash, redirect, url_for, session, jsonify
 from datetime import datetime
+import time
 import os
 import io
 import json
@@ -20,7 +21,7 @@ app.secret_key = 'your-secret-key-change-this'
 SETTINGS_PASSWORD = 'admin123'  # Default password - change this to something secure
 
 # Create uploads directory if it doesn't exist
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = os.path.abspath('uploads')  # Use absolute path for uploads
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
@@ -53,45 +54,43 @@ def is_authenticated():
     return session.get('settings_authenticated', False)
 
 def get_label_settings():
-    """Get label settings optimized for SATO M-84Pro printer"""
-    # SATO M-84Pro S100X150VATY label defaults (150mm x 100mm)
-    default_width = 5.91  # 150mm = 5.91 inches
-    default_height = 3.94  # 100mm = 3.94 inches
-    default_font_size = 6  # Small font for optimal positioning
-    default_spacing_h = 6.1  # 155mm = 6.1 inches spacing
-    default_spacing_v = 1.8  # 1.8 inches vertical spacing (updated from 1.5")
+    """Get label settings from the selected profile"""
+    # Load profiles and get current selection
+    profiles = load_profiles_from_file()
+    current_profile_name = session.get('selected_profile', 'Wire Labels')
+    profile = profiles.get(current_profile_name, profiles.get('Wire Labels', {}))
     
-    # Get values in inches
-    width_inches = session.get('label_width_inches', default_width)
-    height_inches = session.get('label_printable_height_inches', default_height)
-    margin_top_inches = session.get('page_margin_top_inches', 0.0)
-    margin_left_inches = session.get('page_margin_left_inches', 0.0)
-    margin_right_inches = session.get('page_margin_right_inches', 0.0)
-    margin_bottom_inches = session.get('page_margin_bottom_inches', 0.0)
+    print(f"DEBUG: get_label_settings using profile '{current_profile_name}': {profile}")
     
-    return {
-        'width_inches': width_inches,
-        'font_name': session.get('label_font_name', 'Arial'),
-        'font_size': session.get('label_font_size', default_font_size),
-        'font_bold': session.get('label_font_bold', True),
-        'auto_size_font': session.get('label_auto_size_font', False),  # Disabled for precise control
-        'lines_per_label': session.get('lines_per_label', 4),
-        'labels_per_row': session.get('labels_per_row', 4),  # 4 labels per row for sequential printing
-        'page_margin_top_inches': margin_top_inches,
-        'page_margin_left_inches': margin_left_inches,
-        'label_printable_height_inches': height_inches,
-        'label_spacing_horizontal_inches': session.get('label_spacing_horizontal_inches', default_spacing_h),
-        'label_spacing_vertical_inches': session.get('label_spacing_vertical_inches', default_spacing_v),
-        'show_border': session.get('show_border', False),
+    # Use profile settings with session overrides
+    settings_dict = {
+        'width_inches': session.get('label_width_inches', profile.get('width_inches', 0.875)),
+        'font_name': session.get('label_font_name', profile.get('font_name', 'Arial')),
+        'font_size': session.get('label_font_size', profile.get('font_size', 11)),
+        'font_bold': session.get('label_font_bold', profile.get('font_bold', True)),
+        'auto_size_font': session.get('label_auto_size_font', profile.get('auto_size_font', False)),
+        'lines_per_label': session.get('lines_per_label', profile.get('lines_per_label', 3)),
+        'labels_per_row': session.get('labels_per_row', profile.get('labels_per_row', 4)),
+        'page_margin_top_inches': session.get('page_margin_top_inches', profile.get('page_margin_top_inches', 0.0)),
+        'page_margin_left_inches': session.get('page_margin_left_inches', profile.get('page_margin_left_inches', 0.0)),
+        'label_printable_height_inches': session.get('label_printable_height_inches', profile.get('label_printable_height_inches', 0.4)),
+        'label_spacing_horizontal_inches': session.get('label_spacing_horizontal_inches', profile.get('label_spacing_horizontal_inches', 1.0)),
+        'label_spacing_vertical_inches': session.get('label_spacing_vertical_inches', profile.get('label_spacing_vertical_inches', 1.8)),
+        'show_border': session.get('show_border', profile.get('show_border', False)),
         'selected_printer': session.get('selected_printer', 'PTR3'),  # Always SATO
-        # Add mm conversions for template compatibility
-        'width_mm': width_inches * 25.4,
-        'height_mm': height_inches * 25.4,
-        'margin_top_mm': margin_top_inches * 25.4,
-        'margin_right_mm': margin_right_inches * 25.4,
-        'margin_bottom_mm': margin_bottom_inches * 25.4,
-        'margin_left_mm': margin_left_inches * 25.4
     }
+    
+    # Add mm conversions for template compatibility
+    settings_dict.update({
+        'width_mm': settings_dict['width_inches'] * 25.4,
+        'height_mm': settings_dict['label_printable_height_inches'] * 25.4,
+        'margin_top_mm': settings_dict['page_margin_top_inches'] * 25.4,
+        'margin_right_mm': 0.0,  # Not used in profile
+        'margin_bottom_mm': 0.0,  # Not used in profile
+        'margin_left_mm': settings_dict['page_margin_left_inches'] * 25.4
+    })
+    
+    return settings_dict
 
 def get_default_profiles():
     """Get default label profiles"""
@@ -172,6 +171,8 @@ def index():
 
 def handle_label_generation():
     """Handle the modern form submission for label generation"""
+    print("DEBUG: handle_label_generation called")  # Debug line
+    
     try:
         # Get form data
         input_method = request.form.get('input_method', 'manual')
@@ -179,12 +180,14 @@ def handle_label_generation():
         action = request.form.get('action', 'preview')
         print_method = request.form.get('print_method', 'sequential')
         
+        print(f"DEBUG: action={action}, input_method={input_method}")  # Debug line
+        
         # Label customization options
         font_size = int(request.form.get('font_size', 8))
         font_style = request.form.get('font_style', 'normal')
         text_color = request.form.get('text_color', 'black')
         alignment = request.form.get('alignment', 'left')
-        lines_per_label = int(request.form.get('lines_per_label', 3))
+        lines_per_label = int(request.form.get('lines_per_label', 1))  # Default to 1 for PTR3
         thermal_optimized = request.form.get('thermal_optimized', 'auto')
         
         # Print configuration
@@ -229,37 +232,45 @@ def handle_label_generation():
             flash('No valid label data found', 'error')
             return redirect(url_for('index'))
         
-        # Generate labels using optimized thermal settings for SATO M-84Pro
+        # Get current profile settings
+        profiles = load_profiles_from_file()
+        settings = get_label_settings()
+        current_profile_name = settings.get('selected_profile', 'Wire Labels')
+        profile = profiles.get(current_profile_name, profiles.get('Wire Labels', {}))
+        
+        print(f"DEBUG: Using profile '{current_profile_name}' with settings: {profile}")
+        
+        # Generate labels using profile settings for SATO M-84Pro
         generator = WireLabelGenerator(
-            width_inches=5.91,  # SATO M-84Pro S100X150VATY label width (150mm)
-            printable_height_inches=3.94,  # SATO M-84Pro S100X150VATY label height (100mm)
-            margin_top_inches=0.0,
-            margin_left_inches=0.0,
+            width_inches=profile.get('width_inches', 0.875),
+            printable_height_inches=profile.get('label_printable_height_inches', 0.4),
+            margin_top_inches=profile.get('page_margin_top_inches', 0.0),
+            margin_left_inches=profile.get('page_margin_left_inches', 0.0),
             margin_right_inches=0.0,
             margin_bottom_inches=0.0,
-            font_name='Arial',
-            font_size=font_size,
-            font_bold=(font_style in ['bold', 'bold_italic']),
-            auto_size_font=False,  # Use exact font size for thermal precision
+            font_name=profile.get('font_name', 'Arial'),
+            font_size=profile.get('font_size', font_size),
+            font_bold=profile.get('font_bold', True),
+            auto_size_font=profile.get('auto_size_font', False),
             thermal_optimized=True,  # Always enabled for SATO
-            show_border=False
+            show_border=profile.get('show_border', False)
         )
         
-        # Generate the PDF using SATO M-84Pro optimization
+        # Generate the PDF using profile settings
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         pdf_filename = f"wire_labels_{timestamp}.pdf"
         pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf_filename)
         
-        # Use SATO thermal optimization with one-page-per-row approach
+        # Use profile settings for spacing and layout
         success = generator.generate_bulk_labels_grouped(
             wire_id_quantities,
             use_full_page=True,
-            page_margin_top_inches=0.0,  # No top margin for thermal
-            page_margin_left_inches=0.0,  # No left margin for thermal
-            labels_per_row=labels_per_row,  # Usually 1 for thermal optimization
-            label_spacing_horizontal_inches=6.1,  # SATO M-84Pro spacing
-            label_spacing_vertical_inches=1.8,  # Thermal optimized vertical spacing
-            lines_per_label=lines_per_label,
+            page_margin_top_inches=profile.get('page_margin_top_inches', 0.0),
+            page_margin_left_inches=profile.get('page_margin_left_inches', 0.0),
+            labels_per_row=profile.get('labels_per_row', labels_per_row),
+            label_spacing_horizontal_inches=profile.get('label_spacing_horizontal_inches', 1.0),
+            label_spacing_vertical_inches=profile.get('label_spacing_vertical_inches', 1.8),
+            lines_per_label=profile.get('lines_per_label', lines_per_label),
             sato_optimized=True,  # Enable SATO thermal optimization
             output_filename=pdf_path  # Save directly to file
         )
@@ -271,11 +282,27 @@ def handle_label_generation():
                 settings = get_label_settings()
                 printer_name = settings.get('selected_printer')
                 if printer_name:
-                    print_success = windows_printer.print_pdf(pdf_path, printer_name, copies)
+                    # Always use direct thermal printing for all printers - call the working method directly
+                    print(f"Using direct thermal printing for {printer_name}")
+                    
+                    # Use the working thermal printing method directly with correct settings
+                    print_success = True
+                    for wire_id, qty in wire_id_quantities:
+                        for copy in range(qty):
+                            # Use the correct number of lines per label from settings
+                            text_lines = [str(wire_id).strip()] * lines_per_label
+                            print(f"Printing label {copy+1}/{qty} for '{wire_id}' with {lines_per_label} lines")
+                            success = windows_printer.print_thermal_direct(text_lines, printer_name, 1)
+                            if not success:
+                                print_success = False
+                                break
+                        if not print_success:
+                            break
+                    
                     if print_success:
-                        flash(f'Labels printed successfully to {printer_name}', 'success')
+                        flash(f'Labels printed directly to {printer_name} (thermal)', 'success')
                     else:
-                        flash('Printing failed - PDF generated for download', 'warning')
+                        flash('Direct thermal printing failed - PDF generated for download', 'warning')
                 else:
                     flash('No printer selected - PDF generated for download', 'warning')
             
@@ -393,40 +420,41 @@ def uploaded_file(filename):
     return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
 @app.route('/print_pdf', methods=['POST'])
-def print_pdf():
-    """Print a PDF file to the selected printer"""
-    if not PRINTER_AVAILABLE:
-        return jsonify({'success': False, 'error': 'Printing not available'})
+# def print_pdf():
+#     """Print a PDF file to the selected printer"""
+#     if not PRINTER_AVAILABLE:
+#         return jsonify({'success': False, 'error': 'Printing not available'})
     
-    try:
-        data = request.get_json()
-        pdf_url = data.get('pdf_url', '')
+#     try:
+#         data = request.get_json()
+#         pdf_url = data.get('pdf_url', '')
         
-        if not pdf_url:
-            return jsonify({'success': False, 'error': 'No PDF URL provided'})
+#         if not pdf_url:
+#             return jsonify({'success': False, 'error': 'No PDF URL provided'})
         
-        # Extract filename from URL
-        filename = pdf_url.split('/')[-1]
-        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+#         # Extract filename from URL
+#         filename = pdf_url.split('/')[-1]
+#         pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
-        if not os.path.exists(pdf_path):
-            return jsonify({'success': False, 'error': 'PDF file not found'})
+#         if not os.path.exists(pdf_path):
+#             return jsonify({'success': False, 'error': 'PDF file not found'})
         
-        settings = get_label_settings()
-        printer_name = settings.get('selected_printer')
+#         settings = get_label_settings()
+#         printer_name = settings.get('selected_printer')
         
-        if not printer_name:
-            return jsonify({'success': False, 'error': 'No printer selected'})
+#         if not printer_name:
+#             return jsonify({'success': False, 'error': 'No printer selected'})
         
-        success = windows_printer.print_pdf(pdf_path, printer_name, 1)
+#         success = windows_printer.print_pdf(pdf_path, printer_name, 1)
         
-        if success:
-            return jsonify({'success': True, 'message': f'PDF sent to {printer_name}'})
-        else:
-            return jsonify({'success': False, 'error': 'Failed to send PDF to printer'})
+#         if success:
+#             return jsonify({'success': True, 'message': f'PDF sent to {printer_name}'})
+#         else:
+#             return jsonify({'success': False, 'error': 'Failed to send PDF to printer'})
             
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+#     except Exception as e:
+#         return jsonify({'success': False, 'error': str(e)})
+    
 def select_profile():
     """Select a label profile"""
     try:
@@ -758,6 +786,8 @@ def save_temp_wire_ids():
 @app.route('/print_labels', methods=['POST'])
 def print_labels():
     """Print labels directly to selected printer"""
+    print("DEBUG: /print_labels route called")  # Debug line
+    
     if not PRINTER_AVAILABLE:
         flash('Direct printing not available. Please install pywin32.', 'error')
         return redirect(url_for('index'))
@@ -765,6 +795,7 @@ def print_labels():
     try:
         # Get form data
         wire_ids_text = request.form.get('wire_ids', '').strip()
+        print(f"DEBUG: Received wire_ids_text: {wire_ids_text[:100]}...")  # Debug line
         
         # Validate required fields
         if not wire_ids_text:
@@ -800,59 +831,120 @@ def print_labels():
         
         # Get settings
         settings = get_label_settings()
+        printer_name = settings['selected_printer']
         
         # Check if printer is selected
-        if not settings['selected_printer']:
+        if not printer_name:
             flash('Please select a printer in settings before printing', 'error')
             return redirect(url_for('settings'))
         
-        # Create label generator with SATO M-84Pro thermal optimization
+        # For SATO thermal printers, use PowerShell Out-Printer (most reliable method)
+#         if "sato" in printer_name.lower() or "ptr3" in printer_name.lower():
+#             print(f"Using PowerShell Out-Printer for SATO printer: {printer_name}")
+            
+#             # Get the first wire ID to print
+#             wire_id = wire_id_quantities[0][0] if wire_id_quantities else "TEST"
+            
+#             # Use PowerShell Out-Printer method
+#             try:
+#                 import subprocess
+                
+#                 # Create text content for the label
+#                 text_content = f"{wire_id}\n{wire_id}\n{wire_id}\n"
+                
+#                 # PowerShell command to print text directly
+#                 ps_command = f'''
+#                 $text = @"
+# {text_content}
+# "@
+#                 $text | Out-Printer -Name "{printer_name}"
+#                 Write-Host "Label printed successfully"
+#                 '''
+                
+#                 print(f"DEBUG: Executing PowerShell Out-Printer command")
+                
+#                 # Execute PowerShell command
+#                 result = subprocess.run(
+#                     ['powershell', '-Command', ps_command],
+#                     capture_output=True,
+#                     text=True,
+#                     timeout=30
+#                 )
+                
+#                 print(f"DEBUG: PowerShell return code: {result.returncode}")
+#                 print(f"DEBUG: PowerShell output: {result.stdout}")
+                
+#                 if result.returncode == 0:
+#                     print(f"✅ PowerShell label printed successfully to {printer_name}")
+#                     return {"success": True, "message": f"Label sent to printer {printer_name} via PowerShell"}
+#                 else:
+#                     print(f"❌ PowerShell printing failed: {result.stderr}")
+#                     # Continue to PDF fallback
+                
+#             except Exception as e:
+#                 print(f"❌ PowerShell printing failed: {e}")
+#                 # Continue to PDF fallback
+        
+        # Skip complex PDF generation and use legacy PDF approach for non-thermal printers
+        print(f"Using PDF printing method for {printer_name}")
+        
+        # Create label generator using profile settings
         generator = WireLabelGenerator(
             width_inches=settings['width_inches'],
             printable_height_inches=settings['label_printable_height_inches'],
-            margin_top_inches=0.0,  # Zero margins for thermal precision
+            margin_top_inches=settings['page_margin_top_inches'],  # Use profile margins
             margin_right_inches=0.0,
             margin_bottom_inches=0.0,
-            margin_left_inches=0.0,
+            margin_left_inches=settings['page_margin_left_inches'],  # Use profile margins
             font_name=settings['font_name'],
-            font_size=settings['font_size'],
-            font_bold=settings['font_bold'],
-            auto_size_font=False,  # Disabled for thermal precision
+            font_size=settings['font_size'],  # Use exact profile font size
+            font_bold=settings['font_bold'],  # Use profile bold setting
+            auto_size_font=settings['auto_size_font'],  # Use profile auto-size setting
             thermal_optimized=True,  # Always enabled for SATO
             show_border=settings['show_border']
         )
         
-        # SATO M-84Pro advanced thermal generation with one-page-per-row
-        print(f"DEBUG: Using SATO advanced thermal optimization")
-        print(f"DEBUG: Labels per row: {settings['labels_per_row']}")
-        print(f"DEBUG: Vertical spacing: {settings['label_spacing_vertical_inches']} inches")
+        # Create temporary PDF file for printing
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp_pdf_filename = f"temp_print_labels_{timestamp}.pdf"
+        temp_pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_pdf_filename)
         
-        pdf_buffer = generator.generate_bulk_labels_grouped(
+        success = generator.generate_bulk_labels_grouped(
             wire_id_quantities,
             use_full_page=True,
-            page_margin_top_inches=0.0,  # Zero for thermal precision
-            page_margin_left_inches=0.0,  # Zero for thermal precision
+            page_margin_top_inches=settings['page_margin_top_inches'],  # Use profile margins
+            page_margin_left_inches=settings['page_margin_left_inches'],  # Use profile margins
             labels_per_row=settings['labels_per_row'],
             label_spacing_horizontal_inches=settings['label_spacing_horizontal_inches'],
             label_spacing_vertical_inches=settings['label_spacing_vertical_inches'],
             lines_per_label=settings['lines_per_label'],
-            sato_optimized=True  # Enable advanced SATO optimization
-        )
-        
-        # Print the bulk PDF with all labels
-        success = windows_printer.print_pdf_direct(
-            pdf_buffer, 
-            printer_name=settings['selected_printer']
+            sato_optimized=True,  # Enable advanced SATO optimization
+            output_filename=temp_pdf_path  # Save to temporary file
         )
         
         if success:
-            total_labels = sum(quantity for _, quantity in wire_id_quantities)
-            unique_ids = len(wire_id_quantities)
-            flash(f'Successfully sent {total_labels} sequential labels ({unique_ids} unique Wire IDs) to SATO printer: {settings["selected_printer"]}', 'success')
-            print_success = True
+            # Print the PDF file directly without opening viewer
+            print(f"Attempting to print PDF directly to {printer_name}")
+            # print_success = windows_printer.print_labels_direct(temp_pdf_path, printer_name, 1)
+            print_success = windows_printer.print_pdf(temp_pdf_path, printer_name, 1)
+            # pause to allow printing to finish before deleting the temp pdf
+            time.sleep(2)
+
+            # Clean up temporary file after printing attempt
+            try:
+                os.remove(temp_pdf_path)
+                print(f"Cleaned up temporary PDF: {temp_pdf_filename}")
+            except:
+                print(f"Could not clean up temporary file: {temp_pdf_filename}")
+                
+            if print_success:
+                total_labels = sum(quantity for _, quantity in wire_id_quantities)
+                unique_ids = len(wire_id_quantities)
+                flash(f'Successfully sent {total_labels} labels ({unique_ids} unique Wire IDs) to printer: {printer_name} (PDF)', 'success')
+            else:
+                flash(f'Failed to print labels to printer: {printer_name}. PDF may have opened instead.', 'error')
         else:
-            flash(f'Failed to print labels to SATO printer: {settings["selected_printer"]}', 'error')
-            print_success = False
+            flash('Failed to generate labels for printing', 'error')
         
         return redirect(url_for('index'))
         

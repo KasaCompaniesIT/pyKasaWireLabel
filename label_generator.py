@@ -266,61 +266,60 @@ class WireLabelGenerator:
             total_labels = len(sequential_labels)
             print(f"DEBUG: Total labels to generate: {total_labels}")
             
-            # SATO M-84Pro thermal printer optimization - one page per row
+            # SATO M-84Pro thermal printer optimization - multiple labels per row
             if sato_optimized:
-                print("DEBUG: Using SATO M-84Pro thermal optimization - one page per row approach")
+                print("DEBUG: Using SATO M-84Pro thermal optimization - multiple labels per row")
+                print(f"DEBUG: Labels per row: {labels_per_row}")
                 
                 # Calculate page width to accommodate multiple labels per row
-                page_width_mm = (self.label_width_mm * labels_per_row) + (label_spacing_horizontal_mm * (labels_per_row - 1))
-                
-                # Use SATO-specific page height (extended for thermal roll)
-                sato_settings = get_sato_pdf_settings()
-                page_height_mm = self.label_height_mm  # Each page is one label height
+                # Spacing is measured from left edge of one label to left edge of next label
+                page_width_mm = ((labels_per_row - 1) * label_spacing_horizontal_mm) + self.label_width_mm
+                page_height_mm = self.label_height_mm
                 
                 print(f"DEBUG: SATO page dimensions: {page_width_mm:.1f}mm x {page_height_mm:.1f}mm")
-                print(f"DEBUG: Label dimensions: {self.label_width_mm:.1f}mm x {self.label_height_mm:.1f}mm")
+                print(f"DEBUG: Individual label dimensions: {self.label_width_mm:.1f}mm x {self.label_height_mm:.1f}mm")
                 
-                # Create PDF with custom page size for thermal printer
+                # Create PDF with calculated page size for thermal printer
                 pdf = FPDF(unit='mm', format=(page_width_mm, page_height_mm))
                 pdf.set_creator('Wire Label Generator - SATO M-84Pro Thermal Optimized')
                 pdf.set_title(f'SATO Wire Labels: {len(wire_id_quantities)} types, {total_labels} total')
-                pdf.set_subject('SATO M-84Pro One-Page-Per-Row Wire Labels')
+                pdf.set_subject('SATO M-84Pro Wire Labels')
                 
-                # Generate labels in rows, one page per row
+                # Print labels in rows using sequential_labels list
                 current_label_index = 0
-                row_number = 0
+                page_count = 0
                 
-                while current_label_index < total_labels:
-                    row_number += 1
-                    print(f"DEBUG: Generating row {row_number}")
+                while current_label_index < len(sequential_labels):
+                    page_count += 1
+                    print(f"DEBUG: Generating page {page_count}")
                     
-                    # Add new page for each row (thermal optimization)
+                    # Add new page
                     pdf.add_page()
                     
                     # Fill this row with labels (up to labels_per_row)
-                    labels_in_this_row = 0
+                    labels_on_this_page = 0
                     
                     for col in range(labels_per_row):
-                        if current_label_index >= total_labels:
+                        if current_label_index >= len(sequential_labels):
                             break  # No more labels to print
                         
                         wire_id = sequential_labels[current_label_index]
                         
-                        # Calculate position within the row - start at (0,0) for thermal precision
-                        label_x = col * (self.label_width_mm + label_spacing_horizontal_mm)
+                        # Calculate position for this label (left edge to left edge spacing)
+                        label_x = col * label_spacing_horizontal_mm
                         label_y = 0.0  # Always at top of page for thermal printers
                         
-                        print(f"DEBUG: Row {row_number}, Col {col + 1}: '{wire_id}' at x={label_x:.1f}mm, y={label_y:.1f}mm")
+                        print(f"DEBUG: Page {page_count}, Col {col + 1}: '{wire_id}' at x={label_x:.1f}mm, y={label_y:.1f}mm")
                         
                         # Draw the label with SATO optimization
                         self._draw_sato_optimized_label(pdf, wire_id, label_x, label_y, lines_per_label)
                         
                         current_label_index += 1
-                        labels_in_this_row += 1
+                        labels_on_this_page += 1
                     
-                    print(f"DEBUG: Completed row {row_number} with {labels_in_this_row} labels")
+                    print(f"DEBUG: Completed page {page_count} with {labels_on_this_page} labels")
                 
-                print(f"DEBUG: Generated {row_number} pages with {total_labels} total labels for SATO thermal printer")
+                print(f"DEBUG: Generated {page_count} pages with {len(sequential_labels)} total labels for SATO thermal printer")
                 
             else:
                 # Standard multi-label page approach for office printers
@@ -396,33 +395,36 @@ class WireLabelGenerator:
         """Draw a single label optimized for SATO M-84Pro thermal printer"""
         try:
             # SATO M-84Pro specific positioning - start at exact coordinates
-            start_x = x_pos
-            start_y = y_pos + 2.0  # 2mm from top edge for better positioning
+            start_x = x_pos + self.margin_left_mm  # Use actual margin settings
+            start_y = y_pos + self.margin_top_mm   # Use actual margin settings
             
-            # Use optimal line spacing for thermal printing
-            line_spacing = 3.5  # 3.5mm between lines for clear separation
+            # Calculate optimal line spacing based on available height and lines
+            available_height = self.label_height_mm - self.margin_top_mm - self.margin_bottom_mm
+            line_spacing = available_height / max(lines_per_label, 1) if lines_per_label > 1 else available_height * 0.8
             
-            # Set font with SATO optimization
+            # Set font with actual settings
             font_style = 'B' if self.font_bold else ''
             setup_pdf_font(pdf, self.font_name, font_style, self.font_size)
             
-            print(f"DEBUG: Drawing SATO label '{wire_id}' at ({start_x:.1f}, {start_y:.1f})")
+            print(f"DEBUG: Drawing SATO label '{wire_id}' at ({start_x:.1f}, {start_y:.1f}) with {lines_per_label} lines")
+            print(f"DEBUG: Available height: {available_height:.1f}mm, line spacing: {line_spacing:.1f}mm")
             
-            # Draw multiple lines of the same wire ID for thermal readability
+            # Draw the specified number of lines of the same wire ID
             for i in range(lines_per_label):
                 y_position = start_y + (i * line_spacing)
                 
                 # Ensure we don't exceed label boundaries
-                if y_position + line_spacing > self.label_height_mm:
+                if y_position + line_spacing > y_pos + self.label_height_mm - self.margin_bottom_mm:
+                    print(f"DEBUG: Skipping line {i+1} - would exceed label height")
                     break
                 
                 # Use direct text positioning for maximum precision
                 pdf.set_xy(start_x, y_position)
                 
                 # For SATO thermal printers, use text() for precise positioning
-                pdf.text(start_x, y_position + 1.0, wire_id)
+                pdf.text(start_x, y_position + 2.0, wire_id)  # +2mm for baseline offset
                 
-                print(f"DEBUG: Line {i+1} at y={y_position:.1f}mm: '{wire_id}'")
+                print(f"DEBUG: Line {i+1}/{lines_per_label} at y={y_position:.1f}mm: '{wire_id}'")
             
         except Exception as e:
             print(f"ERROR drawing SATO label: {e}")

@@ -12,18 +12,18 @@
     "show_border": false
   },
   "Wire Labels": {
-    "width_inches": 0.875,
+    "width_inches": 1.4,
     "font_name": "Verdana",
-    "font_size": 11,
+    "font_size": 18,
     "font_bold": true,
     "auto_size_font": false,
     "lines_per_label": 3,
     "labels_per_row": 4,
     "page_margin_top_inches": 0.0,
     "page_margin_left_inches": 0.0,
-    "label_printable_height_inches": 0.4,
-    "label_spacing_horizontal_inches": 1.0,
-    "label_spacing_vertical_inches": 1.8,
+    "label_printable_height_inches": 3.54,
+    "label_spacing_horizontal_inches": 1.5,
+    "label_spacing_vertical_inches": 4.1,
     "show_border": false
   }
 }
