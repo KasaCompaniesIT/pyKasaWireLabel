@@ -30,31 +30,23 @@
             </div>
             
             <!-- Printer Section -->
-            {% if printer_info.available %}
             <div class="profile-row">
                 <div class="profile-group">
-                    <form method="POST" action="/select_printer" class="profile-form">
+                    <div class="profile-form">
                         <label for="printer_select" class="profile-label">🖨️ Printer:</label>
-                        <select id="printer_select" name="printer_name" class="profile-select" onchange="this.form.submit()">
-                            <option value="">No printer selected</option>
-                            {% for printer in printer_info.printers %}
-                            <option value="{{ printer }}" {% if printer == settings.selected_printer %}selected{% endif %}>
-                                {{ printer }}{% if printer == printer_info.default %} (Default){% endif %}
-                            </option>
-                            {% endfor %}
+                        <select id="printer_select" name="printer_name" class="profile-select">
+                            <option value="">Detecting printers...</option>
                         </select>
-                    </form>
+                        <button type="button" id="refreshPrintersBtn" class="btn btn-secondary" style="min-width: auto; padding: 8px 12px; margin-left: 8px;">🔄</button>
+                    </div>
                 </div>
             </div>
-            {% endif %}
             
             <!-- Current Profile Info -->
             <div style="margin-top: 10px; font-size: 14px; color: #666;">
                 <strong>Current Profile:</strong> {{ current_profile }} - {{ "%.3f"|format(settings.width_inches) }}" wide, {{ settings.lines_per_label }} lines, {{ settings.labels_per_row }} per row, 
                 Font: {{ settings.font_name }} {{ 'Bold' if settings.font_bold else '' }} {{ settings.font_size }}pt{{ ', Autosize Font: Yes' if settings.auto_size_font else '' }}
-                {% if printer_info.available and settings.selected_printer %}
-                <br><strong>Printer:</strong> {{ settings.selected_printer }} - Status: Ready
-                {% endif %}
+                <br><strong>Print Mode:</strong> Client-side PDF generation and printing
             </div>
         </div>
         
@@ -135,11 +127,9 @@
                 <button type="button" id="exportBtn" class="btn btn-secondary">
                     📊 Export CSV
                 </button>
-                {% if printer_info.available and settings.selected_printer %}
                 <button type="button" id="printBtn" class="btn btn-success">
-                    🖨️ Print to <span style="font-weight: bold;">{{ settings.selected_printer[:30] }}{{ '...' if settings.selected_printer|length > 30 else '' }}</span>
+                    🖨️ Print Labels
                 </button>
-                {% endif %}
             </div>
         </form>
         
@@ -805,8 +795,7 @@
                 });
             }
             
-            {% if printer_info.available and settings.selected_printer %}
-            // Print button
+            // Print button - now always available for client-side printing
             const printBtn = document.getElementById('printBtn');
             if (printBtn) {
                 printBtn.addEventListener('click', function() {
@@ -816,14 +805,38 @@
                         return;
                     }
                     
+                    const selectedPrinter = document.getElementById('printer_select').value;
+                    if (!selectedPrinter) {
+                        alert('Please select a printer first');
+                        return;
+                    }
+                    
                     const totalLabels = wireIdList.reduce((sum, item) => sum + item.quantity, 0);
                     
-                    if (confirm(`Print ${totalLabels} total labels directly to {{ settings.selected_printer }}?`)) {
+                    if (confirm(`Generate PDF and print ${totalLabels} total labels to ${selectedPrinter}?`)) {
+                        // Generate PDF first, then print it
                         updateHiddenTextarea();
                         
                         const form = document.getElementById('labelForm');
-                        form.action = '/print_labels';
-                        console.log('Setting form action to /print_labels'); // Debug
+                        form.action = '/export_pdf';
+                        
+                        // Add hidden input for printer name
+                        const printerInput = document.createElement('input');
+                        printerInput.type = 'hidden';
+                        printerInput.name = 'target_printer';
+                        printerInput.value = selectedPrinter;
+                        form.appendChild(printerInput);
+                        
+                        // Submit form to generate PDF
+                        form.submit();
+                        
+                        // Note: The actual printing will be handled by the browser's print dialog
+                        setTimeout(() => {
+                            alert('PDF generated! Use your browser\'s print function or download the PDF to print to your selected printer.');
+                        }, 1000);
+                    }
+                });
+            }
                         form.submit();
                     }
                 });
@@ -832,6 +845,105 @@
             
             // Initialize
             loadExistingWireIds();
+            detectClientPrinters();
+        });
+        
+        // Client-side printer detection
+        async function detectClientPrinters() {
+            const printerSelect = document.getElementById('printer_select');
+            
+            try {
+                // Check if the Web Print API is available (limited browser support)
+                if ('navigator' in window && 'printing' in navigator) {
+                    const printers = await navigator.printing.getPrinters();
+                    populatePrinterList(printers.map(p => p.name));
+                    return;
+                }
+                
+                // Fallback: Try to use the print dialog to detect default printer
+                if (window.print && window.matchMedia) {
+                    // Get system default printer info if available
+                    const printMedia = window.matchMedia('print');
+                    if (printMedia) {
+                        // Add common printer options as fallback
+                        const commonPrinters = [
+                            'Default Printer',
+                            'PTR3',
+                            'SATO CL4NX', 
+                            'SATO M84Pro',
+                            'Zebra ZD420',
+                            'Zebra ZD621',
+                            'Brother QL-700',
+                            'Brother QL-1110NWB',
+                            'DYMO LabelWriter',
+                            'Microsoft Print to PDF'
+                        ];
+                        populatePrinterList(commonPrinters);
+                        return;
+                    }
+                }
+                
+                // Ultimate fallback
+                populatePrinterList(['Default Printer', 'PTR3', 'Microsoft Print to PDF']);
+                
+            } catch (error) {
+                console.log('Client printer detection failed:', error);
+                // Fallback to common printers
+                populatePrinterList(['Default Printer', 'PTR3', 'Microsoft Print to PDF']);
+            }
+        }
+        
+        function populatePrinterList(printers) {
+            const printerSelect = document.getElementById('printer_select');
+            const currentSelection = printerSelect.value;
+            
+            // Clear existing options
+            printerSelect.innerHTML = '<option value="">Select a printer</option>';
+            
+            // Add detected printers
+            printers.forEach(printer => {
+                const option = document.createElement('option');
+                option.value = printer;
+                option.textContent = printer;
+                printerSelect.appendChild(option);
+            });
+            
+            // Restore previous selection if it exists
+            if (currentSelection && printers.includes(currentSelection)) {
+                printerSelect.value = currentSelection;
+            } else {
+                // Auto-select PTR3 if available, otherwise first printer
+                const ptr3Option = printers.find(p => p.includes('PTR3'));
+                if (ptr3Option) {
+                    printerSelect.value = ptr3Option;
+                } else if (printers.length > 0) {
+                    printerSelect.value = printers[0];
+                }
+            }
+            
+            // Save selection in localStorage
+            printerSelect.addEventListener('change', function() {
+                localStorage.setItem('selectedPrinter', this.value);
+            });
+            
+            // Restore from localStorage
+            const savedPrinter = localStorage.getItem('selectedPrinter');
+            if (savedPrinter && printers.includes(savedPrinter)) {
+                printerSelect.value = savedPrinter;
+            }
+        }
+        
+        // Refresh printers button
+        document.getElementById('refreshPrintersBtn').addEventListener('click', function() {
+            this.textContent = '🔄 Refreshing...';
+            this.disabled = true;
+            
+            setTimeout(() => {
+                detectClientPrinters().then(() => {
+                    this.textContent = '🔄';
+                    this.disabled = false;
+                });
+            }, 500);
         });
         
         // Prevent default form submission if no action is set

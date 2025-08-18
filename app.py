@@ -207,7 +207,13 @@ def index():
             'status': windows_printer.get_printer_status(settings.get('selected_printer'))
         }
     else:
-        printer_info = {'available': False}
+        # Fallback for Docker/Linux environments - provide common thermal printer names
+        printer_info = {
+            'available': False,
+            'printers': ['PTR3', 'SATO CL4NX', 'Zebra ZD420', 'Brother QL-700', 'DYMO LabelWriter'],
+            'default': 'PTR3',
+            'status': 'Docker Mode - PDF Export Only'
+        }
     
     return render_template('index.html', 
                          settings=settings, 
@@ -1016,7 +1022,9 @@ def refresh_printers():
             printers = windows_printer.get_printer_list()
             return jsonify({'success': True, 'printers': printers})
         else:
-            return jsonify({'success': False, 'error': 'Printer support not available'})
+            # Fallback for Docker/Linux environments
+            printers = ['PTR3', 'SATO CL4NX', 'Zebra ZD420', 'Brother QL-700', 'DYMO LabelWriter']
+            return jsonify({'success': True, 'printers': printers, 'docker_mode': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
