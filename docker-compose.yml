@@ -6,7 +6,7 @@ services:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./static:/app/static:ro
+      - ./static:/app/static
     restart: unless-stopped
   nginx:
     image: nginx:latest
