@@ -4,7 +4,21 @@ services:
     container_name: pyKasaWireLabel_web
     ports:
       - "80:5000"
+    expose:
+      - "5000"
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+  nginx:
+    image: nginx:latest
+    container_name: pyKasaWireLabel_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./static:/app/static:ro
+      - ./uploads:/app/uploads:ro
+    depends_on:
+      - web
     restart: unless-stopped
