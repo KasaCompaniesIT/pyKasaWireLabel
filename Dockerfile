@@ -21,4 +21,4 @@ ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
 # Run the Flask app
-CMD ["python", "app.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]

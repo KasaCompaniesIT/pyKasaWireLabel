@@ -2,10 +2,6 @@ services:
   web:
     build: .
     container_name: pyKasaWireLabel_web
-    ports:
-      - "80:5000"
-    expose:
-      - "5000"
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
