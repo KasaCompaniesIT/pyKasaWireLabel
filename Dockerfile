@@ -1,0 +1,24 @@
+# Use official Python image as base
+FROM python:3.13-alpine
+
+RUN apk add --no-cache git
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install dependencies
+# Copy the rest of the application code
+ARG GIT_REPO=https://github.com/KasaCompaniesIT/WireLabel.git
+RUN git clone ${GIT_REPO} . || (echo "Failed to clone repository" && exit 1)
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose Flask port
+EXPOSE 5000
+
+# Set environment variables
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
+
+# Run the Flask app
+CMD ["python", "app.py"]
