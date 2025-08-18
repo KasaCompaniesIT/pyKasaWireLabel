@@ -8,10 +8,10 @@ WORKDIR /app
 
 # Copy requirements and install dependencies
 # Copy the rest of the application code
-ARG GIT_REPO=https://github.com/KasaCompaniesIT/WireLabel.git
+ARG GIT_REPO=https://github.com/KasaCompaniesIT/pyKasaWireLabel.git
 RUN git clone ${GIT_REPO} . || (echo "Failed to clone repository" && exit 1)
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-minimal.txt
 
 # Expose Flask port
 EXPOSE 5000
