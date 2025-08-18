@@ -6,7 +6,7 @@ services:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./app:/app  # Mount local source code
+      - ./static:/app/static:ro
     restart: unless-stopped
   nginx:
     image: nginx:latest
