@@ -854,6 +854,39 @@
             console.log('wireIdList length after initialization:', wireIdList.length);
         });
         
+        // Export CSV button
+        const exportBtn = document.getElementById('exportBtn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', function() {
+                if (wireIdList.length === 0) {
+                    alert('Please add at least one Wire ID to export');
+                    document.getElementById('wireIdInput').focus();
+                    return;
+                }
+                
+                // Update hidden textarea with current wire IDs
+                updateHiddenTextarea();
+                
+                // Create a form to submit the export request
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/export_csv';
+                form.style.display = 'none';
+                
+                // Add the wire IDs data
+                const wireIdsInput = document.createElement('input');
+                wireIdsInput.type = 'hidden';
+                wireIdsInput.name = 'wire_ids';
+                wireIdsInput.value = wireIdList.map(item => `${item.wireId},${item.quantity}`).join('\n');
+                form.appendChild(wireIdsInput);
+                
+                // Submit the form
+                document.body.appendChild(form);
+                form.submit();
+                document.body.removeChild(form);
+            });
+        }
+        
         // Print button - generates PDF and opens system print dialog
         const printBtn = document.getElementById('printBtn');
         if (printBtn) {
@@ -875,7 +908,7 @@
                     
                     // Show loading indicator
                     printBtn.disabled = true;
-                    printBtn.textContent = 'Generating PDF...';
+                    printBtn.textContent = '⏳ Generating PDF...';
                     
                     // Prepare form data
                     const form = document.getElementById('labelForm');
@@ -956,7 +989,7 @@
                     .finally(() => {
                         // Reset button state
                         printBtn.disabled = false;
-                        printBtn.textContent = 'Print Labels';
+                        printBtn.textContent = '🖨️ Print Labels';
                     });
                 }
             });

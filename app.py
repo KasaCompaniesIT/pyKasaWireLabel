@@ -506,6 +506,73 @@ def uploaded_file(filename):
     """Serve uploaded files"""
     return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
+@app.route('/export_csv', methods=['POST'])
+def export_csv():
+    """Export wire IDs to CSV file for download"""
+    try:
+        # Get wire IDs from form
+        wire_ids_text = request.form.get('wire_ids', '').strip()
+        
+        if not wire_ids_text:
+            flash('No wire IDs to export', 'error')
+            return redirect(url_for('index'))
+        
+        # Parse wire IDs
+        wire_id_quantities = []
+        for line in wire_ids_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            
+            if ',' in line:
+                parts = line.split(',', 1)
+                wire_id = parts[0].strip()
+                quantity = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip().isdigit() else 1
+            else:
+                wire_id = line
+                quantity = 1
+            
+            wire_id_quantities.append((wire_id, quantity))
+        
+        if not wire_id_quantities:
+            flash('No valid wire IDs found to export', 'error')
+            return redirect(url_for('index'))
+        
+        # Create CSV content
+        import io
+        import csv
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow(['Wire ID', 'Quantity'])
+        
+        # Write data
+        for wire_id, quantity in wire_id_quantities:
+            writer.writerow([wire_id, quantity])
+        
+        # Create response
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"wire_ids_export_{timestamp}.csv"
+        
+        # Create response with proper headers for download
+        from flask import Response
+        response = Response(
+            csv_content,
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
+        
+        return response
+        
+    except Exception as e:
+        flash(f'Error exporting CSV: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
 @app.route('/generate_pdf_for_print', methods=['POST'])
 def generate_pdf_for_print():
     """Generate PDF and return the filename for direct printing"""
@@ -633,7 +700,8 @@ def generate_pdf_for_print():
             
 #     except Exception as e:
 #         return jsonify({'success': False, 'error': str(e)})
-    
+
+@app.route('/select_profile', methods=['POST'])    
 def select_profile():
     """Select a label profile"""
     try:
