@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
+<html lang="en">    
+<head></head>  
     <meta charset="UTF-8">
     <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,30 +23,37 @@
                                 {{ profile_name }}
                             </option>
                             {% endfor %}
-                        </select>
+                        </select>                    
                         <a href="/settings" class="settings-link" id="settingsLink">⚙️ Settings</a>
                     </form>
                 </div>
             </div>
             
-            <!-- Printer Section -->
+            {# <!-- Printer Section -->
             <div class="profile-row">
                 <div class="profile-group">
                     <div class="profile-form">
                         <label for="printer_select" class="profile-label">🖨️ Printer:</label>
-                        <select id="printer_select" name="printer_name" class="profile-select">
-                            <option value="">Detecting printers...</option>
-                        </select>
-                        <button type="button" id="refreshPrintersBtn" class="btn btn-secondary" style="min-width: auto; padding: 8px 12px; margin-left: 8px;">🔄</button>
+                        <input type="text" id="printer_input" name="printer_name" class="profile-select" 
+                               placeholder="Enter printer name (e.g., PTR3)" 
+                               style="flex: 1;">
+                        <button type="button" id="refreshPrintersBtn" class="btn btn-secondary" style="min-width: auto; padding: 8px 12px; margin-left: 8px;">� Use Browser Print</button>
                     </div>
                 </div>
-            </div>
-            
+            </div> #}
+            {# <!-- Print Mode Info -->
+            <div class="profile-row">
+                <div class="profile-group">
+                    <div style="padding: 10px; background: #e7f3ff; border-radius: 4px; border-left: 4px solid #007bff;">
+                        <strong>🖨️ Print Mode:</strong> System Print Dialog - Select any printer when printing
+                    </div>
+                </div>
+            </div>  #}
             <!-- Current Profile Info -->
             <div style="margin-top: 10px; font-size: 14px; color: #666;">
                 <strong>Current Profile:</strong> {{ current_profile }} - {{ "%.3f"|format(settings.width_inches) }}" wide, {{ settings.lines_per_label }} lines, {{ settings.labels_per_row }} per row, 
                 Font: {{ settings.font_name }} {{ 'Bold' if settings.font_bold else '' }} {{ settings.font_size }}pt{{ ', Autosize Font: Yes' if settings.auto_size_font else '' }}
-                <br><strong>Print Mode:</strong> Client-side PDF generation and printing
+                {# <br><strong>Print Mode:</strong> Client-side PDF generation and printing #}
             </div>
         </div>
         
@@ -80,7 +87,7 @@
                     </div>
                 </div>
                 <div class="help-text" style="font-size: 14px; color: #666; margin-top: 10px;">
-                    Enter a Wire ID and quantity, then click Add or press Enter. The quantity will be remembered for the next entry.
+                    Enter a Wire ID and quantity, then click Add or press Enter. 
                 </div>
             </div>
             
@@ -805,22 +812,24 @@
                         return;
                     }
                     
-                    const selectedPrinter = document.getElementById('printer_select').value;
+                    const selectedPrinter = document.getElementById('printer_input').value.trim();
                     if (!selectedPrinter) {
-                        alert('Please select a printer first');
+                        alert('Please enter a printer name first');
+                        document.getElementById('printer_input').focus();
                         return;
                     }
                     
                     const totalLabels = wireIdList.reduce((sum, item) => sum + item.quantity, 0);
                     
-                    if (confirm(`Generate PDF and print ${totalLabels} total labels to ${selectedPrinter}?`)) {
+                    if (confirm(`Generate PDF for printing ${totalLabels} total labels to ${selectedPrinter}?\n\nNote: This will open the PDF in a new tab. You can then print it to your specified printer.`)) {
                         // Generate PDF first, then print it
                         updateHiddenTextarea();
                         
                         const form = document.getElementById('labelForm');
                         form.action = '/export_pdf';
+                        form.target = '_blank'; // Open in new tab
                         
-                        // Add hidden input for printer name
+                        // Add hidden input for printer name (for reference)
                         const printerInput = document.createElement('input');
                         printerInput.type = 'hidden';
                         printerInput.name = 'target_printer';
@@ -830,121 +839,128 @@
                         // Submit form to generate PDF
                         form.submit();
                         
-                        // Note: The actual printing will be handled by the browser's print dialog
                         setTimeout(() => {
-                            alert('PDF generated! Use your browser\'s print function or download the PDF to print to your selected printer.');
+                            alert(`PDF generated! The file has opened in a new tab.\n\nTo print to ${selectedPrinter}:\n1. Use Ctrl+P (or Cmd+P on Mac)\n2. Select "${selectedPrinter}" from the printer list\n3. Click Print`);
                         }, 1000);
                     }
                 });
             }
-                        form.submit();
-                    }
-                });
-            }
-            {% endif %}
             
             // Initialize
             loadExistingWireIds();
-            detectClientPrinters();
+            
+            // Debug: Check state after loading
+            console.log('Page loaded - wireIdList after initialization:', wireIdList);
+            console.log('wireIdList length after initialization:', wireIdList.length);
         });
         
-        // Client-side printer detection
-        async function detectClientPrinters() {
-            const printerSelect = document.getElementById('printer_select');
-            
-            try {
-                // Check if the Web Print API is available (limited browser support)
-                if ('navigator' in window && 'printing' in navigator) {
-                    const printers = await navigator.printing.getPrinters();
-                    populatePrinterList(printers.map(p => p.name));
+        // Print button - generates PDF and opens system print dialog
+        const printBtn = document.getElementById('printBtn');
+        if (printBtn) {
+            printBtn.addEventListener('click', function() {
+                console.log('Print button clicked, wireIdList:', wireIdList);
+                console.log('wireIdList length:', wireIdList.length);
+                
+                if (wireIdList.length === 0) {
+                    alert('Please add at least one Wire ID');
+                    document.getElementById('wireIdInput').focus();
                     return;
                 }
                 
-                // Fallback: Try to use the print dialog to detect default printer
-                if (window.print && window.matchMedia) {
-                    // Get system default printer info if available
-                    const printMedia = window.matchMedia('print');
-                    if (printMedia) {
-                        // Add common printer options as fallback
-                        const commonPrinters = [
-                            'Default Printer',
-                            'PTR3',
-                            'SATO CL4NX', 
-                            'SATO M84Pro',
-                            'Zebra ZD420',
-                            'Zebra ZD621',
-                            'Brother QL-700',
-                            'Brother QL-1110NWB',
-                            'DYMO LabelWriter',
-                            'Microsoft Print to PDF'
-                        ];
-                        populatePrinterList(commonPrinters);
-                        return;
-                    }
-                }
+                const totalLabels = wireIdList.reduce((sum, item) => sum + item.quantity, 0);
                 
-                // Ultimate fallback
-                populatePrinterList(['Default Printer', 'PTR3', 'Microsoft Print to PDF']);
-                
-            } catch (error) {
-                console.log('Client printer detection failed:', error);
-                // Fallback to common printers
-                populatePrinterList(['Default Printer', 'PTR3', 'Microsoft Print to PDF']);
-            }
-        }
-        
-        function populatePrinterList(printers) {
-            const printerSelect = document.getElementById('printer_select');
-            const currentSelection = printerSelect.value;
-            
-            // Clear existing options
-            printerSelect.innerHTML = '<option value="">Select a printer</option>';
-            
-            // Add detected printers
-            printers.forEach(printer => {
-                const option = document.createElement('option');
-                option.value = printer;
-                option.textContent = printer;
-                printerSelect.appendChild(option);
-            });
-            
-            // Restore previous selection if it exists
-            if (currentSelection && printers.includes(currentSelection)) {
-                printerSelect.value = currentSelection;
-            } else {
-                // Auto-select PTR3 if available, otherwise first printer
-                const ptr3Option = printers.find(p => p.includes('PTR3'));
-                if (ptr3Option) {
-                    printerSelect.value = ptr3Option;
-                } else if (printers.length > 0) {
-                    printerSelect.value = printers[0];
+                if (confirm(`Generate and print ${totalLabels} total labels?`)) {
+                    // Update hidden textarea with current wire IDs
+                    updateHiddenTextarea();
+                    
+                    // Show loading indicator
+                    printBtn.disabled = true;
+                    printBtn.textContent = 'Generating PDF...';
+                    
+                    // Prepare form data
+                    const form = document.getElementById('labelForm');
+                    const formData = new FormData(form);
+                    formData.set('action', 'preview'); // Set action to generate PDF
+                    
+                    // Submit form to generate PDF
+                    fetch('/generate_pdf_for_print', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Create a hidden iframe to load the PDF and trigger print
+                            const iframe = document.createElement('iframe');
+                            iframe.style.display = 'none';
+                            iframe.src = data.pdf_url;
+                            
+                            // When PDF loads, trigger print dialog
+                            iframe.onload = function() {
+                                try {
+                                    // Wait a moment for PDF to fully load
+                                    setTimeout(() => {
+                                        iframe.contentWindow.print();
+                                        
+                                        // Try to detect when printing is done
+                                        // Listen for focus events that might indicate print dialog closed
+                                        const cleanupIframe = () => {
+                                            if (iframe.parentNode) {
+                                                iframe.parentNode.removeChild(iframe);
+                                                console.log('Iframe cleaned up after print dialog closed');
+                                            }
+                                        };
+                                        
+                                        // Listen for window focus (user might return to main window after printing)
+                                        const onWindowFocus = () => {
+                                            setTimeout(cleanupIframe, 1000); // Small delay to ensure print is done
+                                            window.removeEventListener('focus', onWindowFocus);
+                                        };
+                                        window.addEventListener('focus', onWindowFocus);
+                                        
+                                        // Also listen for iframe focus changes
+                                        try {
+                                            iframe.contentWindow.addEventListener('afterprint', () => {
+                                                setTimeout(cleanupIframe, 500);
+                                            });
+                                        } catch (e) {
+                                            // Cross-origin restrictions might prevent this
+                                            console.log('Could not add afterprint listener');
+                                        }
+                                        
+                                    }, 500);
+                                } catch (error) {
+                                    console.warn('Could not auto-print PDF, opening in new tab instead');
+                                    window.open(data.pdf_url, '_blank');
+                                }
+                            };
+                            
+                            document.body.appendChild(iframe);
+                            
+                            // Fallback cleanup after 2 minutes in case event listeners don't work
+                            const fallbackCleanup = setTimeout(() => {
+                                if (iframe.parentNode) {
+                                    iframe.parentNode.removeChild(iframe);
+                                    console.log('Iframe cleaned up after 2 minute timeout');
+                                }
+                            }, 120000); // 2 minutes fallback
+                            
+                        } else {
+                            alert('Failed to generate PDF: ' + (data.error || 'Unknown error'));
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error generating PDF:', error);
+                        alert('Error generating PDF. Please try again.');
+                    })
+                    .finally(() => {
+                        // Reset button state
+                        printBtn.disabled = false;
+                        printBtn.textContent = 'Print Labels';
+                    });
                 }
-            }
-            
-            // Save selection in localStorage
-            printerSelect.addEventListener('change', function() {
-                localStorage.setItem('selectedPrinter', this.value);
             });
-            
-            // Restore from localStorage
-            const savedPrinter = localStorage.getItem('selectedPrinter');
-            if (savedPrinter && printers.includes(savedPrinter)) {
-                printerSelect.value = savedPrinter;
-            }
         }
-        
-        // Refresh printers button
-        document.getElementById('refreshPrintersBtn').addEventListener('click', function() {
-            this.textContent = '🔄 Refreshing...';
-            this.disabled = true;
-            
-            setTimeout(() => {
-                detectClientPrinters().then(() => {
-                    this.textContent = '🔄';
-                    this.disabled = false;
-                });
-            }, 500);
-        });
         
         // Prevent default form submission if no action is set
         document.getElementById('labelForm').addEventListener('submit', function(e) {

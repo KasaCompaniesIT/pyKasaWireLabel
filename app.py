@@ -251,7 +251,8 @@ def handle_label_generation():
         wire_id_quantities = []
         
         if input_method == 'manual':
-            label_data = request.form.get('label_data', '').strip()
+            # Use wire_ids field instead of label_data for manual input
+            label_data = request.form.get('wire_ids', '').strip()
             if not label_data:
                 flash('Please enter label data', 'error')
                 return redirect(url_for('index'))
@@ -363,10 +364,43 @@ def handle_label_generation():
             pdf_url = f'/uploads/{pdf_filename}'
             flash(f'Labels generated successfully! {len(wire_id_quantities)} unique wire IDs processed.', 'success')
             
+            # Store the wire IDs in session so they persist after page reload
+            wire_ids_text = '\n'.join([f"{wire_id},{qty}" for wire_id, qty in wire_id_quantities])
+            session['temp_wire_ids'] = wire_ids_text
+            
+            # Get all the variables that the template needs
+            settings = get_label_settings()
+            default_profiles = get_default_profiles()
+            saved_profiles = get_saved_profiles()
+            all_profiles = {**default_profiles, **saved_profiles}
+            current_profile = settings.get('selected_profile', 'Wire Labels')
+            
+            # Get printer info
+            if PRINTER_AVAILABLE:
+                printer_info = {
+                    'available': True,
+                    'printers': windows_printer.get_printer_list(),
+                    'default': windows_printer.get_default_printer(),
+                    'status': windows_printer.get_printer_status(settings.get('selected_printer'))
+                }
+            else:
+                # Fallback for Docker/Linux environments - provide common thermal printer names
+                printer_info = {
+                    'available': False,
+                    'printers': ['PTR3', 'SATO CL4NX', 'Zebra ZD420', 'Brother QL-700', 'DYMO LabelWriter'],
+                    'default': 'PTR3',
+                    'status': 'Docker Mode - PDF Export Only'
+                }
+            
             return render_template('index.html', 
                                  pdf_url=pdf_url,
                                  pdf_filename=pdf_filename,
                                  label_count=sum(qty for _, qty in wire_id_quantities),
+                                 wire_ids=wire_ids_text,
+                                 settings=settings,
+                                 printer_info=printer_info,
+                                 profiles=all_profiles,
+                                 current_profile=current_profile,
                                  generation_stats={
                                      'total_labels': sum(qty for _, qty in wire_id_quantities),
                                      'unique_ids': len(wire_id_quantities),
@@ -471,6 +505,98 @@ def generate_batch_data(prefix, start, count):
 def uploaded_file(filename):
     """Serve uploaded files"""
     return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+
+@app.route('/generate_pdf_for_print', methods=['POST'])
+def generate_pdf_for_print():
+    """Generate PDF and return the filename for direct printing"""
+    try:
+        # Get form data - same as handle_label_generation but return PDF URL
+        input_method = request.form.get('input_method', 'manual')
+        data_format = request.form.get('data_format', 'quantity')  # Use 'quantity' since JS sends "WIRE_ID,QTY" format
+        print_method = request.form.get('print_method', 'sequential')
+        
+        # Label customization options
+        font_size = int(request.form.get('font_size', 8))
+        font_style = request.form.get('font_style', 'normal')
+        text_color = request.form.get('text_color', 'black')
+        alignment = request.form.get('alignment', 'left')
+        lines_per_label = int(request.form.get('lines_per_label', 1))
+        thermal_optimized = request.form.get('thermal_optimized', 'auto')
+        
+        # Print configuration
+        copies = int(request.form.get('copies', 1))
+        labels_per_row = int(request.form.get('labels_per_row', 1))
+        
+        # Process input - use wire_ids for manual input
+        wire_id_quantities = []
+        
+        if input_method == 'manual':
+            label_data = request.form.get('wire_ids', '').strip()
+            if not label_data:
+                return jsonify({'success': False, 'error': 'Please enter label data'})
+            
+            wire_id_quantities = parse_label_data(label_data, data_format)
+        
+        if not wire_id_quantities:
+            return jsonify({'success': False, 'error': 'No valid label data found'})
+        
+        # Get current profile settings
+        profiles = load_profiles_from_file()
+        settings = get_label_settings()
+        current_profile_name = settings.get('selected_profile', 'Wire Labels')
+        profile = profiles.get(current_profile_name, profiles.get('Wire Labels', {}))
+        
+        # Generate labels using profile settings
+        generator = WireLabelGenerator(
+            width_inches=profile.get('width_inches', 0.875),
+            printable_height_inches=profile.get('label_printable_height_inches', 0.4),
+            margin_top_inches=profile.get('page_margin_top_inches', 0.0),
+            margin_left_inches=profile.get('page_margin_left_inches', 0.0),
+            margin_right_inches=0.0,
+            margin_bottom_inches=0.0,
+            font_name=profile.get('font_name', 'Arial'),
+            font_size=profile.get('font_size', font_size),
+            font_bold=profile.get('font_bold', True),
+            auto_size_font=profile.get('auto_size_font', False),
+            thermal_optimized=True,
+            show_border=profile.get('show_border', False)
+        )
+        
+        # Generate the PDF
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pdf_filename = f"wire_labels_{timestamp}.pdf"
+        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf_filename)
+        
+        success = generator.generate_bulk_labels_grouped(
+            wire_id_quantities,
+            use_full_page=True,
+            page_margin_top_inches=profile.get('page_margin_top_inches', 0.0),
+            page_margin_left_inches=profile.get('page_margin_left_inches', 0.0),
+            labels_per_row=profile.get('labels_per_row', labels_per_row),
+            label_spacing_horizontal_inches=profile.get('label_spacing_horizontal_inches', 1.0),
+            label_spacing_vertical_inches=profile.get('label_spacing_vertical_inches', 1.8),
+            lines_per_label=profile.get('lines_per_label', lines_per_label),
+            sato_optimized=True,
+            output_filename=pdf_path
+        )
+        
+        if success:
+            # Store wire IDs in session for persistence
+            wire_ids_text = '\n'.join([f"{wire_id},{qty}" for wire_id, qty in wire_id_quantities])
+            session['temp_wire_ids'] = wire_ids_text
+            
+            # Return the PDF URL
+            return jsonify({
+                'success': True, 
+                'pdf_url': f'/uploads/{pdf_filename}',
+                'filename': pdf_filename
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Failed to generate PDF'})
+            
+    except Exception as e:
+        print(f"Error generating PDF: {e}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/print_pdf', methods=['POST'])
 # def print_pdf():
