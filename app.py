@@ -1,3 +1,9 @@
+import sys
+from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtCore import QUrl
+import threading
+import webbrowser
 from flask import Flask, render_template, request, send_file, flash, redirect, url_for, session, jsonify
 from datetime import datetime
 import time
@@ -614,19 +620,33 @@ def generate_pdf_for_print():
         profile = profiles.get(current_profile_name, profiles.get('Wire Labels', {}))
         
         # Generate labels using profile settings
+        # generator = WireLabelGenerator(
+        #     width_inches=profile.get('width_inches', 0.875),
+        #     printable_height_inches=profile.get('label_printable_height_inches', 0.4),
+        #     margin_top_inches=profile.get('page_margin_top_inches', 0.0),
+        #     margin_left_inches=profile.get('page_margin_left_inches', 0.0),
+        #     margin_right_inches=0.0,
+        #     margin_bottom_inches=0.0,
+        #     font_name=profile.get('font_name', 'Arial'),
+        #     font_size=profile.get('font_size', font_size),
+        #     font_bold=profile.get('font_bold', True),
+        #     auto_size_font=profile.get('auto_size_font', False),
+        #     thermal_optimized=True,
+        #     show_border=profile.get('show_border', False)
+        # )
         generator = WireLabelGenerator(
-            width_inches=profile.get('width_inches', 0.875),
-            printable_height_inches=profile.get('label_printable_height_inches', 0.4),
-            margin_top_inches=profile.get('page_margin_top_inches', 0.0),
-            margin_left_inches=profile.get('page_margin_left_inches', 0.0),
+            width_inches=settings['width_inches'],
+            printable_height_inches=settings['label_printable_height_inches'],
+            margin_top_inches=settings['page_margin_top_inches'],  # Use profile margins
             margin_right_inches=0.0,
             margin_bottom_inches=0.0,
-            font_name=profile.get('font_name', 'Arial'),
-            font_size=profile.get('font_size', font_size),
-            font_bold=profile.get('font_bold', True),
-            auto_size_font=profile.get('auto_size_font', False),
-            thermal_optimized=True,
-            show_border=profile.get('show_border', False)
+            margin_left_inches=settings['page_margin_left_inches'],  # Use profile margins
+            font_name=settings['font_name'],
+            font_size=settings['font_size'],  # Use exact profile font size
+            font_bold=settings['font_bold'],  # Use profile bold setting
+            auto_size_font=settings['auto_size_font'],  # Use profile auto-size setting
+            thermal_optimized=True,  # Always enabled for SATO
+            show_border=settings['show_border']
         )
         
         # Generate the PDF
@@ -634,17 +654,30 @@ def generate_pdf_for_print():
         pdf_filename = f"wire_labels_{timestamp}.pdf"
         pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf_filename)
         
+        # success = generator.generate_bulk_labels_grouped(
+        #     wire_id_quantities,
+        #     use_full_page=True,
+        #     page_margin_top_inches=profile.get('page_margin_top_inches', 0.0),
+        #     page_margin_left_inches=profile.get('page_margin_left_inches', 0.0),
+        #     labels_per_row=profile.get('labels_per_row', labels_per_row),
+        #     label_spacing_horizontal_inches=profile.get('label_spacing_horizontal_inches', 1.0),
+        #     label_spacing_vertical_inches=profile.get('label_spacing_vertical_inches', 1.8),
+        #     lines_per_label=profile.get('lines_per_label', lines_per_label),
+        #     sato_optimized=True,
+        #     output_filename=pdf_path
+        # )
+        
         success = generator.generate_bulk_labels_grouped(
             wire_id_quantities,
             use_full_page=True,
-            page_margin_top_inches=profile.get('page_margin_top_inches', 0.0),
-            page_margin_left_inches=profile.get('page_margin_left_inches', 0.0),
-            labels_per_row=profile.get('labels_per_row', labels_per_row),
-            label_spacing_horizontal_inches=profile.get('label_spacing_horizontal_inches', 1.0),
-            label_spacing_vertical_inches=profile.get('label_spacing_vertical_inches', 1.8),
-            lines_per_label=profile.get('lines_per_label', lines_per_label),
-            sato_optimized=True,
-            output_filename=pdf_path
+            page_margin_top_inches=settings['page_margin_top_inches'],  # Use profile margins
+            page_margin_left_inches=settings['page_margin_left_inches'],  # Use profile margins
+            labels_per_row=settings['labels_per_row'],
+            label_spacing_horizontal_inches=settings['label_spacing_horizontal_inches'],
+            label_spacing_vertical_inches=settings['label_spacing_vertical_inches'],
+            lines_per_label=settings['lines_per_label'],
+            sato_optimized=True,  # Enable advanced SATO optimization
+            output_filename=pdf_path 
         )
         
         if success:
@@ -1093,53 +1126,6 @@ def print_labels():
         if not printer_name:
             flash('Please select a printer in settings before printing', 'error')
             return redirect(url_for('settings'))
-        
-        # For SATO thermal printers, use PowerShell Out-Printer (most reliable method)
-#         if "sato" in printer_name.lower() or "ptr3" in printer_name.lower():
-#             print(f"Using PowerShell Out-Printer for SATO printer: {printer_name}")
-            
-#             # Get the first wire ID to print
-#             wire_id = wire_id_quantities[0][0] if wire_id_quantities else "TEST"
-            
-#             # Use PowerShell Out-Printer method
-#             try:
-#                 import subprocess
-                
-#                 # Create text content for the label
-#                 text_content = f"{wire_id}\n{wire_id}\n{wire_id}\n"
-                
-#                 # PowerShell command to print text directly
-#                 ps_command = f'''
-#                 $text = @"
-# {text_content}
-# "@
-#                 $text | Out-Printer -Name "{printer_name}"
-#                 Write-Host "Label printed successfully"
-#                 '''
-                
-#                 print(f"DEBUG: Executing PowerShell Out-Printer command")
-                
-#                 # Execute PowerShell command
-#                 result = subprocess.run(
-#                     ['powershell', '-Command', ps_command],
-#                     capture_output=True,
-#                     text=True,
-#                     timeout=30
-#                 )
-                
-#                 print(f"DEBUG: PowerShell return code: {result.returncode}")
-#                 print(f"DEBUG: PowerShell output: {result.stdout}")
-                
-#                 if result.returncode == 0:
-#                     print(f"✅ PowerShell label printed successfully to {printer_name}")
-#                     return {"success": True, "message": f"Label sent to printer {printer_name} via PowerShell"}
-#                 else:
-#                     print(f"❌ PowerShell printing failed: {result.stderr}")
-#                     # Continue to PDF fallback
-                
-#             except Exception as e:
-#                 print(f"❌ PowerShell printing failed: {e}")
-#                 # Continue to PDF fallback
         
         # Skip complex PDF generation and use legacy PDF approach for non-thermal printers
         print(f"Using PDF printing method for {printer_name}")
@@ -1590,3 +1576,38 @@ def logout():
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
+# # Function to run Flask server
+# def run_flask():
+#     app.run(host='localhost', port=5000, debug=True, use_reloader=False)
+
+# # Main window class for PyQt
+# class MainWindow(QMainWindow):
+#     def __init__(self):
+#         super().__init__()
+#         self.setWindowTitle("Kasa Wire Label Printer")
+#         self.setGeometry(100, 100, 800, 900)
+
+#         # Create a web view to display the Flask app
+#         self.browser = QWebEngineView()
+#         self.setCentralWidget(self.browser)
+        
+#         # Load the Flask app URL
+#         self.browser.setUrl(QUrl("http://localhost:5000"))
+
+# if __name__ == '__main__':
+#     # Start Flask server in a separate thread
+#     flask_thread = threading.Thread(target=run_flask, daemon=True)
+#     flask_thread.start()
+
+#     # Start PyQt application
+#     qt_app = QApplication(sys.argv)
+#     window = MainWindow()
+#     window.show()
+
+#     # Ensure Flask server is ready before the browser tries to load
+#     # import time
+#     # time.sleep(1)  # Wait for Flask to start
+#     # webbrowser.open('http://localhost:5000')  # Optional: open in external browser for testing
+
+#     sys.exit(qt_app.exec_())

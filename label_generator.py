@@ -342,43 +342,45 @@ class WireLabelGenerator:
                 # Standard multi-label page approach for office printers
                 print("DEBUG: Using standard office printer approach - multiple labels per page")
                 
-                pdf = FPDF(unit='mm', format='letter')
+                pdf = FPDF(orientation='P', unit='mm', format='letter')  # 'P' = Portrait
                 pdf.set_creator('Wire Label Generator - Multi-Label Layout')
                 pdf.set_title(f'Wire Labels: {len(wire_id_quantities)} types, {total_labels} total')
+                pdf.set_subject('Wire Labels for Printing - Portrait Orientation')
+                pdf.set_keywords('wire labels, portrait, printing')
                 
                 # Calculate labels per page for office printers
-                available_height = self.page_height_mm - page_margin_top_mm - 20
+                available_height = self.page_height_mm - page_margin_top_mm
                 labels_per_column = max(1, int(available_height / label_spacing_vertical_mm))
                 max_labels_per_page = labels_per_row * labels_per_column
-                
+
                 print(f"DEBUG: Office printer - Labels per page: {max_labels_per_page}")
-                
+
                 # Add first page
                 pdf.add_page()
-                
+
                 # Print labels sequentially across multiple pages
                 current_label_index = 0
                 labels_on_current_page = 0
-                
+
                 while current_label_index < total_labels:
                     # Check if we need a new page
                     if labels_on_current_page >= max_labels_per_page:
                         pdf.add_page()
                         labels_on_current_page = 0
-                    
+
                     # Calculate position
                     current_row = labels_on_current_page // labels_per_row
                     current_col = labels_on_current_page % labels_per_row
-                    
+
                     label_x = page_margin_left_mm + (current_col * label_spacing_horizontal_mm)
                     label_y = page_margin_top_mm + (current_row * label_spacing_vertical_mm)
-                    
+
                     wire_id = sequential_labels[current_label_index]
-                    
+
                     # Draw standard label
-                    self._draw_label_at_position(pdf, wire_id, label_x, label_y, lines_per_label, 
+                    self._draw_label_at_position(pdf, wire_id, label_x, label_y, lines_per_label,
                                                brother_optimized, sato_optimized)
-                    
+
                     current_label_index += 1
                     labels_on_current_page += 1
             
@@ -451,8 +453,8 @@ class WireLabelGenerator:
                 pdf.set_xy(start_x, y_position)
                 
                 # For SATO thermal printers, use text() for precise positioning
-                pdf.text(start_x, y_position + 2.0, wire_id)  # +2mm for baseline offset
-                
+                pdf.text(start_x, y_position, wire_id)
+
                 print(f"DEBUG: Line {i+1}/{lines_per_label} at y={y_position:.1f}mm: '{wire_id}'")
             
         except Exception as e:
@@ -477,11 +479,13 @@ class WireLabelGenerator:
         """Generate multiple labels arranged on full-size pages using proper spacing settings"""
         
         try:
-            pdf = FPDF(unit='mm', format='letter')
+            pdf = FPDF(orientation='P', unit='mm', format='letter')  # 'P' = Portrait
             
             # Set PDF metadata
             pdf.set_creator('Wire Label Generator - Full Page')
             pdf.set_title(f'Wire Labels: {len(wire_ids)} types, {len(wire_ids) * print_qty} total')
+            pdf.set_subject('Wire Labels for Printing - Portrait Orientation')
+            pdf.set_keywords('wire labels, portrait, printing')
             
             labels_printed = 0
             current_page_labels = 0
@@ -700,9 +704,9 @@ class WireLabelGenerator:
         if sato_optimized:
             # Use the same SATO-optimized positioning as individual labels
             start_x = x_mm + 0.0    # 0mm offset from label left edge
-            start_y = y_mm + 2.0    # 2mm from label top edge (same as individual labels)
+            start_y = y_mm + self.margin_top_mm   # Use actual top margin
             line_spacing = 3.5      # 3.5mm between lines (same as individual labels)
-            
+
             for i in range(lines_per_label):
                 y_position = start_y + (i * line_spacing)
                 pdf.set_xy(start_x, y_position)  # Set cursor position first
@@ -711,9 +715,9 @@ class WireLabelGenerator:
         else:
             # Original positioning for other printers
             for i in range(lines_per_label):
-                y_position = y_mm + top_margin + (i * line_height) + (line_height * 0.2)
+                y_position = y_mm + top_margin + (i * line_height)
                 pdf.set_xy(x_mm + left_margin, y_position)
-                
+
                 # Create cell with precise positioning
                 pdf.cell(available_width, line_height * 0.6, wire_id, align='C', border=0)
     

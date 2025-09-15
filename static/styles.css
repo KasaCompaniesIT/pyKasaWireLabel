@@ -868,3 +868,59 @@ textarea {
     border-left: 4px solid #007bff;
     font-weight: 500;
 }
+
+/* Print-specific styles */
+@page {
+    size: letter portrait; /* Force portrait orientation for all pages */
+    margin: 0.5in; /* Set print margins */
+}
+
+/* Additional CSS to strongly suggest portrait orientation */
+@page :first {
+    size: portrait;
+}
+
+@page :left {
+    size: portrait;
+}
+
+@page :right {
+    size: portrait;
+}
+
+@media print {
+    /* Hide non-essential elements when printing */
+    .btn, button, .button-group, .settings-link, .modal, .flashes {
+        display: none !important;
+    }
+    
+    /* Ensure content fits well on printed page */
+    body {
+        font-size: 12pt;
+        line-height: 1.4;
+        color: black;
+        background: white;
+    }
+    
+    .container {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+        border-radius: 0;
+    }
+    
+    /* Force page breaks to avoid splitting content awkwardly */
+    .wire-table {
+        page-break-inside: avoid;
+    }
+    
+    h1, h2 {
+        page-break-after: avoid;
+    }
+    
+    /* Ensure tables print with borders */
+    .wire-table, .wire-table th, .wire-table td {
+        border: 1px solid black;
+    }
+}
